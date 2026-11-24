@@ -1,0 +1,25 @@
+[package]
+name = "wfhelper-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "WFHelper services: game data, inventory, warframe.market, world state, EE.log."
+
+[dependencies]
+wf-api.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+chrono.workspace = true
+crossbeam-channel.workspace = true
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls", "json", "gzip", "cookies"] }
+lzma-rs = "0.3.0"
+directories = "6.0.0"
+regex = "1"
+aes = "0.9.4"
+cbc = { version = "0.2.1", features = ["alloc"] }
+notify-rust = "4.19.0"
+anyhow = "1.0.105"
+
+[dev-dependencies]
+tempfile = "3"
