@@ -65,21 +65,46 @@ impl MasteryView {
                 kit::ring(ui, summary.mastered as f32 / summary.total.max(1) as f32, 118.0, INFO(), "Mastered");
                 ui.add_space(8.0);
                 kit::card(ui, |ui| {
-                    ui.horizontal(|ui| {
+                    // As tall as the ring beside it (118 minus the card's 14px
+                    // margins), stats centered vertically: a frame can't be
+                    // centered in a row, so this sizes it instead.
+                    let mr_line = ui.fonts_mut(|f| f.row_height(&FontId::new(40.0, theme::display_bold())));
+                    let body_line = ui.text_style_height(&egui::TextStyle::Body);
+                    let stats_h: f32 = mr_line + ui.spacing().item_spacing.y + body_line;
+                    const INNER: f32 = 118.0 - 2.0 * 14.0 - 2.0;
+                    ui.vertical(|ui| {
+                        ui.set_min_height(INNER);
+                        ui.add_space((INNER - stats_h) / 2.0);
+                        // Top-aligned: a centered `horizontal` row steps each
+                        // stat a little lower than the one before as it grows.
+                        // The stats share one font, so their tops line up.
+                        ui.horizontal_top(|ui| {
+                        // Separators stretch to the available height.
+                        ui.set_max_height(stats_h);
+                        // The one-line stats, centered on the two-line MR block.
+                        let big = ui.fonts_mut(|f| f.row_height(&FontId::new(40.0, theme::display_bold())));
+                        let pad = ((stats_h - big) / 2.0).max(0.0);
+                        let stat = |ui: &mut Ui, value: &str, label: &str, color| {
+                            ui.vertical(|ui| {
+                                ui.add_space(pad);
+                                kit::big_stat(ui, value, label, color);
+                            });
+                        };
                         ui.add_space(12.0);
-                        kit::big_stat(ui, &summary.mastered.to_string(), "Mastered", POSITIVE());
+                        stat(ui, &summary.mastered.to_string(), "Mastered", POSITIVE());
                         ui.separator();
-                        kit::big_stat(ui, &in_progress.to_string(), "In Progress", WARNING());
+                        stat(ui, &in_progress.to_string(), "In Progress", WARNING());
                         ui.separator();
-                        kit::big_stat(ui, &missing.to_string(), "Missing", NEGATIVE());
+                        stat(ui, &missing.to_string(), "Missing", NEGATIVE());
                         ui.separator();
-                        kit::big_stat(ui, &summary.total.to_string(), "Total", TEXT());
+                        stat(ui, &summary.total.to_string(), "Total", TEXT());
                         ui.separator();
                         ui.vertical(|ui| {
                             ui.label(RichText::new(format!("MR {}", inv.mastery_rank)).font(FontId::new(40.0, theme::display_bold())));
                             ui.label(RichText::new(format!("{} XP from item ranks", format::int(summary.points))).color(TEXT_SECONDARY()));
                         });
                         ui.add_space(12.0);
+                        });
                     });
                 });
             });

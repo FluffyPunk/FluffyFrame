@@ -45,8 +45,8 @@ pub fn page_subtitle(ui: &mut Ui, text: &str) {
 /// Underline tabs; returns true when the selection changed.
 pub fn tabs<T: PartialEq + Copy>(ui: &mut Ui, current: &mut T, items: &[(T, String)]) -> bool {
     let mut changed = false;
-    let start_y = ui.cursor().top();
-    ui.horizontal(|ui| {
+    let (left, width) = (ui.cursor().left(), ui.available_width());
+    let row = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         for (value, label) in items {
             let selected = *current == *value;
@@ -70,10 +70,10 @@ pub fn tabs<T: PartialEq + Copy>(ui: &mut Ui, current: &mut T, items: &[(T, Stri
             }
         }
     });
-    let w = ui.available_width();
-    let y = ui.cursor().top() - ui.spacing().item_spacing.y + 1.0;
-    let _ = start_y;
-    ui.painter().hline(ui.cursor().left()..=ui.cursor().left() + w, y, Stroke::new(1.0, BORDER_SUBTLE()));
+    // Measured from the row, not the cursor: inside a horizontal layout (Relics'
+    // toolbar) the cursor ends up to the right of the tabs, not below them.
+    let y = row.response.rect.bottom();
+    ui.painter().hline(left..=left + width, y, Stroke::new(1.0, BORDER_SUBTLE()));
     ui.add_space(8.0);
     changed
 }

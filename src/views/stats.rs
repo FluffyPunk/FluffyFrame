@@ -151,7 +151,9 @@ impl StatsView {
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             kit::card(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.horizontal_wrapped(|ui| {
+                // Top-aligned: a centered wrapping row steps each metric down a
+                // little as the row grows.
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true), |ui| {
                     for m in &ms {
                         let v = (m.get)(&today);
                         let d = v as i64 - (m.get)(&yesterday) as i64;
