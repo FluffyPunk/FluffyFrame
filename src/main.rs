@@ -11,12 +11,14 @@ mod assets;
 mod components;
 mod image_loader;
 mod ipc;
+mod memory;
 mod stores;
 mod theme;
 mod theme_presets;
 mod views;
 
 fn main() -> eframe::Result<()> {
+    memory::limit_arenas();
     wfhelper_core::services::logger::init();
     log::info!("starting WFHelper {}", env!("CARGO_PKG_VERSION"));
 

@@ -295,7 +295,9 @@ pub fn grid_sections(ui: &mut Ui, mut sections: Vec<GridSection<'_>>) {
             }
             y += top;
         }
-        ui.set_min_size(vec2(avail, y));
+        // Content size from the top: `set_min_size` would measure from the cursor,
+        // which sits below the drawn rows, and inflate the scroll range.
+        ui.expand_to_include_rect(egui::Rect::from_min_size(origin, vec2(avail, y)));
     });
 }
 

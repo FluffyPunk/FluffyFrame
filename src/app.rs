@@ -22,6 +22,7 @@ impl WfHelperApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         crate::image_loader::install(&cc.egui_ctx);
+        crate::image_loader::install_thumbnails(&cc.egui_ctx);
         theme::install(&cc.egui_ctx);
         let settings = wfhelper_core::config::settings::Settings::load();
         crate::stores::apply_theme(&cc.egui_ctx, &settings);
@@ -40,7 +41,8 @@ impl WfHelperApp {
 }
 
 impl eframe::App for WfHelperApp {
-    fn logic(&mut self, _ctx: &egui::Context, _frame: &mut Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
+        crate::image_loader::release_evicted(ctx);
         while let Ok(event) = self.backend.events.try_recv() {
             self.state.apply(event, &self.backend);
         }

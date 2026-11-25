@@ -8,14 +8,15 @@ use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, TryRecvError};
 use wfhelper_core::services::wfm_stats_price::{self, price_key};
+use wfhelper_core::services::wfm_stats_price::Variant;
 
 use super::{Emitter, Event, Shared};
 
 pub enum PriceCmd {
-    /// (slug, rank) pairs to price.
-    Request(Vec<(String, Option<u32>)>),
+    /// (slug, rank/refinement) pairs to price.
+    Request(Vec<(String, Variant)>),
     /// Drop cached values and refetch these.
-    Refresh(Vec<(String, Option<u32>)>),
+    Refresh(Vec<(String, Variant)>),
 }
 
 const BATCH: usize = 8;
@@ -27,13 +28,13 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<PriceCmd>) {
     if !cached.is_empty() {
         emitter.emit(Event::Prices(cached));
     }
-    let mut queue: VecDeque<(String, Option<u32>)> = VecDeque::new();
+    let mut queue: VecDeque<(String, Variant)> = VecDeque::new();
     let mut queued: HashSet<String> = HashSet::new();
     let mut failed: HashSet<String> = HashSet::new();
     let mut batch = Vec::new();
     let mut since_save = 0;
 
-    let enqueue = |items: Vec<(String, Option<u32>)>, force: bool, queue: &mut VecDeque<_>, queued: &mut HashSet<String>, failed: &mut HashSet<String>| {
+    let enqueue = |items: Vec<(String, Variant)>, force: bool, queue: &mut VecDeque<_>, queued: &mut HashSet<String>, failed: &mut HashSet<String>| {
         for (slug, rank) in items.into_iter().rev() {
             let key = price_key(&slug, rank);
             if force {

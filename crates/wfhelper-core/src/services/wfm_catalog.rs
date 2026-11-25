@@ -27,6 +27,18 @@ pub struct CatalogItem {
 }
 
 impl CatalogItem {
+    /// Pool shown by default: rank 0 for ranked items, intact for relics.
+    pub fn default_variant(&self) -> super::wfm_stats_price::Variant {
+        use super::wfm_stats_price::Variant;
+        if self.tags.iter().any(|t| t == "relic") {
+            Variant::Subtype("intact")
+        } else if self.max_rank.is_some() {
+            Variant::Rank(0)
+        } else {
+            Variant::Base
+        }
+    }
+
     pub fn thumb_url(&self) -> Option<String> {
         self.thumb.as_ref().map(|t| format!("{WFM_ASSETS}{t}"))
     }
