@@ -125,15 +125,13 @@ impl MarketView {
                         kit::remote_image(ui, item.and_then(|i| i.thumb_url()).as_deref(), vec2(40.0, 40.0));
                         ui.vertical(|ui| {
                             let name = item.map(|i| i.name.clone()).unwrap_or_else(|| o.item_id.clone());
-                            ui.label(RichText::new(match o.rank {
-                                Some(r) => format!("{name}  (R{r})"),
-                                None => name,
-                            }).family(theme::body_strong()).size(15.0));
+                            let variant = o.variant().label();
+                            ui.label(RichText::new(if variant.is_empty() { name } else { format!("{name}  ({variant})") }).family(theme::body_strong()).size(15.0));
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(format!("Qty {}", o.quantity)).size(12.0).color(TEXT_SECONDARY()));
                                 if let Some(i) = item {
                                     ui.label(RichText::new("48h avg").size(12.0).color(TEXT_MUTED()));
-                                    kit::plat(ui, state.price(&i.slug, o.rank), 12.0);
+                                    kit::plat(ui, state.price(&i.slug, o.variant()), 12.0);
                                 }
                                 if !o.visible {
                                     kit::pill(ui, "Hidden", WARNING());
@@ -171,10 +169,10 @@ impl MarketView {
             ui.horizontal_wrapped(|ui| {
                 for item in catalog.search(&self.search, 14) {
                     if kit::chip(ui, self.looked_up.as_deref() == Some(&item.slug), &item.name).clicked() {
-                        let rank = item.max_rank.map(|_| 0);
+                        let variant = item.default_variant();
                         self.looked_up = Some(item.slug.clone());
-                        backend.market(MarketCmd::TopOrders { slug: item.slug.clone(), rank });
-                        backend.prices(PriceCmd::Request(vec![(item.slug.clone(), rank)]));
+                        backend.market(MarketCmd::TopOrders { slug: item.slug.clone(), variant });
+                        backend.prices(PriceCmd::Request(vec![(item.slug.clone(), variant)]));
                     }
                 }
             });
@@ -184,7 +182,7 @@ impl MarketView {
             kit::empty(ui, "Item lookup", "Search the warframe.market catalog to see live orders.");
             return;
         };
-        let rank = item.max_rank.map(|_| 0);
+        let rank = item.default_variant();
         kit::card(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
@@ -216,7 +214,8 @@ impl MarketView {
                                 kit::raised(ui, |ui| {
                                     ui.set_width(ui.available_width());
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new(format!("{}p", o.platinum)).family(theme::body_strong()).color(color));
+                                        ui.label(RichText::new(o.price_text()).family(theme::body_strong()).color(color))
+                                            .on_hover_text(if o.per_trade > 1 { format!("{}p per {} ({:.2}p each)", o.platinum, o.per_trade, o.unit_price()) } else { String::new() });
                                         ui.label(RichText::new(format!("×{}", o.quantity)).color(TEXT_MUTED()));
                                         ui.label(o.user_name.as_deref().unwrap_or("?"));
                                         ui.label(RichText::new(o.user_status.as_deref().unwrap_or("")).size(11.5).color(TEXT_MUTED()));

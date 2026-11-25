@@ -7,14 +7,15 @@ use egui::{Align, FontId, Layout, Margin, RichText, Sense, Stroke, Ui, pos2, vec
 use wfhelper_core::config::settings::ValueScope;
 use wfhelper_core::services::full_sets;
 use wfhelper_core::services::inventory::{InventoryGroup, InventoryRow};
+use wfhelper_core::services::item_database::ItemKind;
 use wfhelper_core::services::wfm_catalog::Catalog;
 use wfhelper_core::services::wfm_orders::{NewOrder, OrderType};
-use wfhelper_core::services::wfm_stats_price::price_key;
+use wfhelper_core::services::wfm_stats_price::{Variant, price_key};
 
 use super::need_inventory;
 use crate::components::{archon, format, ui as kit};
 use crate::ipc::{Backend, MarketCmd, PriceCmd};
-use crate::stores::{self, AppState, price_rank};
+use crate::stores::{self, AppState};
 use crate::theme::{self, *};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -46,7 +47,7 @@ struct SellDraft {
     order_type: OrderType,
     item_id: String,
     name: String,
-    rank: Option<u32>,
+    variant: Variant,
     platinum: u32,
     quantity: u32,
 }
@@ -54,7 +55,7 @@ struct SellDraft {
 struct BulkLine {
     item_id: String,
     name: String,
-    rank: Option<u32>,
+    variant: Variant,
     platinum: u32,
     quantity: u32,
     include: bool,
@@ -75,6 +76,10 @@ pub struct InventoryView {
     tradable_only: bool,
     include: HashSet<InventoryGroup>,
     show_incomplete_sets: bool,
+    /// Set slugs already sent to the price worker.
+    sets_requested: HashSet<String>,
+    /// Full set shown in the market panel (sets are not inventory rows).
+    selected_set: Option<InventoryRow>,
     selected: Option<String>,
     bulk_mode: bool,
     bulk_selected: HashSet<String>,
@@ -107,6 +112,8 @@ impl Default for InventoryView {
             ]
             .into(),
             show_incomplete_sets: false,
+            sets_requested: HashSet::new(),
+            selected_set: None,
             selected: None,
             bulk_mode: false,
             bulk_selected: HashSet::new(),
@@ -114,6 +121,33 @@ impl Default for InventoryView {
             sell: None,
         }
     }
+}
+
+/// A full set as a market-panel row. Its count is what can be sold as a set:
+/// built weapons are account-bound and do not count.
+fn set_row(set: &full_sets::FullSet, db: &wfhelper_core::services::item_database::ItemDb) -> InventoryRow {
+    InventoryRow {
+        unique_name: set.result.clone(),
+        name: set.name.clone(),
+        group: InventoryGroup::Sets,
+        kind: db.get(&set.result).map_or(ItemKind::Other, |i| i.kind),
+        count: set.tradable_complete,
+        rank: None,
+        max_rank: None,
+        ducats: None,
+        wfm_slug: set.slug.clone(),
+        image_url: db.image_url(&set.result),
+        is_prime_part: false,
+        vaulted: false,
+        level: None,
+        shards: Vec::new(),
+        subtype: None,
+    }
+}
+
+/// Selection key of a full set, apart from the built item's own row.
+fn set_key(result: &str) -> String {
+    format!("set:{result}")
 }
 
 fn row_key(r: &InventoryRow) -> String {
@@ -124,6 +158,15 @@ fn ducats_per_plat(r: &InventoryRow, price: Option<f64>) -> Option<f64> {
     match (r.ducats, price) {
         (Some(d), Some(p)) if p > 0.0 => Some(d as f64 / p),
         _ => None,
+    }
+}
+
+/// "12p", "0.5p", "0.83p": whole numbers plain, fractions to two decimals.
+fn plat_text(p: f64) -> String {
+    if p.fract() == 0.0 || p >= 10.0 {
+        format!("{p:.0}p")
+    } else {
+        format!("{}p", format!("{p:.2}").trim_end_matches('0').trim_end_matches('.'))
     }
 }
 
@@ -272,10 +315,14 @@ impl InventoryView {
             .collect();
         if kit::tabs(ui, &mut self.tab, &tabs) {
             self.selected = None;
+            self.selected_set = None;
         }
 
         if self.tab == InventoryGroup::Sets {
-            self.sets_ui(ui, state);
+            self.market_side_panel(ui, state, backend, settings.keep_spare_copies);
+            self.sets_ui(ui, state, backend);
+            // Post WTS/WTB from a set's panel opens this dialog.
+            self.sell_dialog(ui, state, backend);
             return;
         }
 
@@ -364,13 +411,8 @@ impl InventoryView {
             kit::empty(ui, "No resources found", "Clear the search to see every resource.");
         }
 
-        // Market listings dock on the right while an item is selected.
-        if self.selected.is_some() && !self.bulk_mode {
-            egui::Panel::right("market-listings")
-                .resizable(false)
-                .exact_size(360.0)
-                .frame(egui::Frame::new().inner_margin(Margin { left: 12, right: 0, top: 0, bottom: 0 }))
-                .show(ui, |ui| self.market_panel(ui, state, backend, settings.keep_spare_copies));
+        if !self.bulk_mode {
+            self.market_side_panel(ui, state, backend, settings.keep_spare_copies);
         }
 
         // Items (cards or rows), then resources as compact tiles, in one scroll
@@ -421,18 +463,17 @@ impl InventoryView {
                 if !self.bulk_selected.remove(&key) {
                     self.bulk_selected.insert(key);
                 }
-            } else {
-                if r.wfm_slug.is_none() {
-                    // Nothing to trade: show the item details instead.
-                    self.pending_open = Some(r.unique_name.clone());
-                }
+            } else if let Some(slug) = &r.wfm_slug {
+                // Tradable: the market listings panel.
                 self.selected = Some(key);
                 self.rank_view = None;
-                if let Some(slug) = &r.wfm_slug {
-                    let rank = price_rank(r.rank, r.max_rank);
-                    backend.prices(PriceCmd::Request(vec![(slug.clone(), rank)]));
-                    backend.market(MarketCmd::TopOrders { slug: slug.clone(), rank });
-                }
+                let variant = r.variant();
+                backend.prices(PriceCmd::Request(vec![(slug.clone(), variant)]));
+                backend.market(MarketCmd::TopOrders { slug: slug.clone(), variant });
+            } else {
+                // Nothing to trade: just the item details, no empty market panel.
+                self.selected = None;
+                self.pending_open = Some(r.unique_name.clone());
             }
         }
 
@@ -496,15 +537,17 @@ impl InventoryView {
                 });
                 if let Some(slug) = &r.wfm_slug {
                     ui.add_space(2.0);
-                    let rank = price_rank(r.rank, r.max_rank);
-                    let book = state.top_orders.get(&price_key(slug, rank));
-                    let rank_label = rank.map(|r| format!(" R{r}")).unwrap_or_default();
+                    let variant = r.variant();
+                    let book = state.top_orders.get(&price_key(slug, variant));
+                    let label = variant.label();
+                    let rank_label = if label.is_empty() { label } else { format!(" {label}") };
+                    // Per unit: bulk orders price a whole batch (3p for 6 = 0.5p).
                     let (wts, wtb) = match book {
                         Some(b) => (
-                            b.sell.first().map(|o| format!("{}p", o.platinum)),
-                            b.buy.first().map(|o| format!("{}p", o.platinum)),
+                            b.sell.first().map(|o| plat_text(o.unit_price())),
+                            b.buy.first().map(|o| plat_text(o.unit_price())),
                         ),
-                        None => (price.map(|p| format!("~{p:.0}p")), None),
+                        None => (price.map(|p| format!("~{}", plat_text(p))), None),
                     };
                     ui.columns(2, |cols| {
                         price_box(&mut cols[0], &format!("WTS{rank_label}"), wts.as_deref());
@@ -625,9 +668,23 @@ impl InventoryView {
     }
 
     /// Right-side order book (original: `InventoryOrderBookPanel.svelte`).
+    /// Market listings dock on the right while an item or set is selected.
+    fn market_side_panel(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend, keep_spare: u32) {
+        if self.selected.is_none() {
+            return;
+        }
+        egui::Panel::right("market-listings")
+            .resizable(false)
+            .exact_size(360.0)
+            .frame(egui::Frame::new().inner_margin(Margin { left: 12, right: 0, top: 0, bottom: 0 }))
+            .show(ui, |ui| self.market_panel(ui, state, backend, keep_spare));
+    }
+
     fn market_panel(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend, keep_spare: u32) {
         let Some(key) = self.selected.clone() else { return };
-        let Some(row) = state.rows.iter().find(|r| row_key(r) == key).cloned() else {
+        // A selected set is not an inventory row; it carries its own.
+        let set_row = self.selected_set.clone().filter(|r| set_key(&r.unique_name) == key);
+        let Some(row) = set_row.or_else(|| state.rows.iter().find(|r| row_key(r) == key).cloned()) else {
             self.selected = None;
             return;
         };
@@ -635,13 +692,13 @@ impl InventoryView {
             ui.set_width(ui.available_width());
             ui.label(RichText::new("Market Listings").font(FontId::new(18.0, theme::display())));
             let slug = row.wfm_slug.clone();
-            let default_rank = price_rank(row.rank, row.max_rank);
-            let rank = self.rank_view.or(default_rank);
+            // The rank toggle overrides a ranked item's default pool.
+            let variant = self.rank_view.map_or(row.variant(), Variant::Rank);
             ui.horizontal(|ui| {
                 if let Some(slug) = &slug {
                     if kit::ghost_button(ui, "Refresh").clicked() {
-                        backend.prices(PriceCmd::Refresh(vec![(slug.clone(), rank)]));
-                        backend.market(MarketCmd::TopOrders { slug: slug.clone(), rank });
+                        backend.prices(PriceCmd::Refresh(vec![(slug.clone(), variant)]));
+                        backend.market(MarketCmd::TopOrders { slug: slug.clone(), variant });
                     }
                     if kit::ghost_button(ui, "Statistics").clicked() {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(format!("https://warframe.market/items/{slug}/statistics")));
@@ -664,7 +721,8 @@ impl InventoryView {
                 });
                 ui.vertical(|ui| {
                     ui.label(RichText::new(&row.name).family(theme::body_strong()).size(15.0));
-                    let view = rank.map(|r| format!(" · Viewing R{r}")).unwrap_or_default();
+                    let label = variant.label();
+                    let view = if label.is_empty() { label } else { format!(" · Viewing {label}") };
                     ui.label(RichText::new(format!("x{} · {}{view}", row.count, row.kind.label())).size(12.0).color(TEXT_MUTED()));
                 });
             });
@@ -694,7 +752,7 @@ impl InventoryView {
                 ui.label(RichText::new("Not tradable on warframe.market.").color(TEXT_MUTED()));
                 return;
             };
-            let book = state.top_orders.get(&price_key(&slug, rank)).cloned();
+            let book = state.top_orders.get(&price_key(&slug, variant)).cloned();
             let online = |o: &&wfhelper_core::services::wfm_orders::Order| !self.online_only || o.user_status.as_deref().is_some_and(|s| s != "offline");
             let mut sells: Vec<_> = book.as_ref().map(|b| b.sell.iter().filter(online).cloned().collect()).unwrap_or_default();
             let mut buys: Vec<_> = book.as_ref().map(|b| b.buy.iter().filter(online).cloned().collect()).unwrap_or_default();
@@ -704,8 +762,9 @@ impl InventoryView {
             if self.sort_by_reputation.1 {
                 buys.sort_by_key(|o| std::cmp::Reverse(o.reputation.unwrap_or(0)));
             }
-            let best_wts = book.as_ref().and_then(|b| b.sell.iter().filter(online).map(|o| o.platinum).min());
-            let best_wtb = book.as_ref().and_then(|b| b.buy.iter().filter(online).map(|o| o.platinum).max());
+            // Per unit: a bulk order's platinum buys a whole batch.
+            let best_wts = book.as_ref().and_then(|b| b.sell.iter().filter(online).map(|o| o.unit_price()).min_by(f64::total_cmp));
+            let best_wtb = book.as_ref().and_then(|b| b.buy.iter().filter(online).map(|o| o.unit_price()).max_by(f64::total_cmp));
             ui.add_space(6.0);
             ui.columns(3, |cols| {
                 let tile = |ui: &mut Ui, label: &str, v: Option<String>, color: egui::Color32| {
@@ -715,9 +774,9 @@ impl InventoryView {
                         ui.label(RichText::new(v.unwrap_or("-".into())).family(theme::body_strong()).color(color));
                     });
                 };
-                tile(&mut cols[0], "Best WTS", best_wts.map(|p| format!("{p}p")), ACCENT_BRIGHT());
-                tile(&mut cols[1], "Best WTB", best_wtb.map(|p| format!("{p}p")), INFO());
-                let spread = best_wts.zip(best_wtb).map(|(s, b)| format!("{}p", s as i64 - b as i64));
+                tile(&mut cols[0], "Best WTS", best_wts.map(plat_text), ACCENT_BRIGHT());
+                tile(&mut cols[1], "Best WTB", best_wtb.map(plat_text), INFO());
+                let spread = best_wts.zip(best_wtb).map(|(s, b)| plat_text(s - b));
                 tile(&mut cols[2], "Spread", spread, TEXT());
             });
             ui.add_space(4.0);
@@ -725,11 +784,11 @@ impl InventoryView {
             if let Some(max) = row.max_rank.filter(|m| *m > 0) {
                 ui.horizontal(|ui| {
                     kit::caption(ui, "Rank view");
-                    let mut r = rank.unwrap_or(0);
+                    let mut r = if let Variant::Rank(r) = variant { r } else { 0 };
                     if kit::segmented(ui, &mut r, &[(0, "R0"), (max, &format!("R{max}"))]) {
                         self.rank_view = Some(r);
-                        backend.market(MarketCmd::TopOrders { slug: slug.clone(), rank: Some(r) });
-                        backend.prices(PriceCmd::Request(vec![(slug.clone(), Some(r))]));
+                        backend.market(MarketCmd::TopOrders { slug: slug.clone(), variant: Variant::Rank(r) });
+                        backend.prices(PriceCmd::Request(vec![(slug.clone(), Variant::Rank(r))]));
                     }
                 });
             }
@@ -752,15 +811,15 @@ impl InventoryView {
                         && let Some(item) = state.catalog.as_ref().and_then(|c| c.by_slug(&slug))
                     {
                         let suggested = match kind {
-                            OrderType::Sell => best_wts.or_else(|| state.row_price(&row).map(|p| p.round() as u32)),
-                            OrderType::Buy => best_wtb.or_else(|| state.row_price(&row).map(|p| (p * 0.8).round() as u32)),
+                            OrderType::Sell => best_wts.or_else(|| state.row_price(&row)),
+                            OrderType::Buy => best_wtb.or_else(|| state.row_price(&row).map(|p| p * 0.8)),
                         };
                         self.sell = Some(SellDraft {
                             order_type: kind,
                             item_id: item.id.clone(),
                             name: row.name.clone(),
-                            rank,
-                            platinum: suggested.unwrap_or(1).max(1),
+                            variant,
+                            platinum: (suggested.unwrap_or(1.0).round() as u32).max(1),
                             quantity: 1,
                         });
                     }
@@ -806,7 +865,8 @@ impl InventoryView {
                                     kit::pill(ui, st, sc);
                                     ui.label(RichText::new(format!("x{}", o.quantity)).size(11.5).color(TEXT_MUTED()));
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.label(RichText::new(format!("{}p", o.platinum)).family(theme::body_strong()).color(ACCENT_BRIGHT()));
+                                        ui.label(RichText::new(o.price_text()).family(theme::body_strong()).color(ACCENT_BRIGHT()))
+                                            .on_hover_text(if o.per_trade > 1 { format!("{}p per {} ({:.2}p each)", o.platinum, o.per_trade, o.unit_price()) } else { String::new() });
                                     });
                                 });
                                 if let Some(r) = o.rank {
@@ -853,10 +913,18 @@ impl InventoryView {
                 ui.label("Quantity");
                 ui.add(egui::DragValue::new(&mut draft.quantity).range(1..=999));
                 ui.end_row();
-                if let Some(r) = draft.rank {
-                    ui.label("Rank");
-                    ui.label(r.to_string());
-                    ui.end_row();
+                match draft.variant {
+                    Variant::Rank(r) => {
+                        ui.label("Rank");
+                        ui.label(r.to_string());
+                        ui.end_row();
+                    }
+                    Variant::Subtype(_) => {
+                        ui.label("Refinement");
+                        ui.label(draft.variant.label());
+                        ui.end_row();
+                    }
+                    Variant::Base => {}
                 }
             });
             ui.label(RichText::new("The listing is created when you confirm. Finish the trade in game.").size(12.0).color(TEXT_MUTED()));
@@ -871,7 +939,7 @@ impl InventoryView {
                 order_type: draft.order_type,
                 platinum: draft.platinum,
                 quantity: draft.quantity,
-                rank: draft.rank,
+                variant: draft.variant,
                 visible: true,
             }]);
         }
@@ -891,7 +959,7 @@ impl InventoryView {
                 Some(BulkLine {
                     item_id: item.id.clone(),
                     name: r.name.clone(),
-                    rank: price_rank(r.rank, r.max_rank),
+                    variant: r.variant(),
                     platinum: state.row_price(r).map(|p| p.round().max(1.0) as u32).unwrap_or(1),
                     quantity: r.count.min(999) as u32,
                     include: true,
@@ -921,9 +989,9 @@ impl InventoryView {
                     ui.end_row();
                     for l in lines.iter_mut() {
                         ui.checkbox(&mut l.include, "");
-                        ui.label(match l.rank {
-                            Some(r) => format!("{} (R{r})", l.name),
-                            None => l.name.clone(),
+                        ui.label(match l.variant {
+                            Variant::Base => l.name.clone(),
+                            v => format!("{} ({})", l.name, v.label()),
                         });
                         ui.add(egui::DragValue::new(&mut l.quantity).range(1..=999));
                         ui.add(egui::DragValue::new(&mut l.platinum).range(1..=100_000).suffix(" p"));
@@ -946,7 +1014,7 @@ impl InventoryView {
                     order_type: OrderType::Sell,
                     platinum: l.platinum,
                     quantity: l.quantity,
-                    rank: l.rank,
+                    variant: l.variant,
                     visible: true,
                 })
                 .collect();
@@ -959,7 +1027,7 @@ impl InventoryView {
         }
     }
 
-    fn sets_ui(&mut self, ui: &mut Ui, state: &AppState) {
+    fn sets_ui(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend) {
         let (Some(inv), Some(db)) = (&state.inventory, &state.db) else { return };
         let empty = Catalog::default();
         let catalog = state.catalog.as_deref().unwrap_or(&empty);
@@ -977,10 +1045,32 @@ impl InventoryView {
             kit::empty(ui, "No sets", "No complete sets can be put together from the parts you own.");
             return;
         }
-        kit::card_grid(ui, 300.0, 170.0, sets.len(), |ui, i| {
+        // Sets are not inventory rows, so their prices are asked for here, once.
+        // Every set once, cached or not: the price worker skips fresh prices and
+        // refreshes expired ones.
+        let missing: Vec<(String, Variant)> = sets
+            .iter()
+            .filter_map(|s| s.slug.clone())
+            .filter(|slug| self.sets_requested.insert(slug.clone()))
+            .map(|slug| (slug, Variant::Base))
+            .collect();
+        if !missing.is_empty() {
+            backend.prices(PriceCmd::Request(missing));
+        }
+        // Header plus one row per part: 4-part sets (frames) need a taller card.
+        let heights: Vec<f32> = sets.iter().map(|s| 76.0 + s.parts.len() as f32 * 32.0).collect();
+        let mut clicked: Option<usize> = None;
+        let selected = self.selected.clone();
+        let mut cards = kit::GridSection::new(300.0, 0.0, sets.len(), |ui, i| {
             let set = &sets[i];
-            let color = if set.complete > 0 { Some(alpha(POSITIVE(), 0.45)) } else { None };
-            kit::grid_card(ui, color, |ui| {
+            let color = if selected.as_deref() == Some(set_key(&set.result).as_str()) {
+                Some(ACCENT())
+            } else if set.complete > 0 {
+                Some(alpha(POSITIVE(), 0.45))
+            } else {
+                None
+            };
+            let resp = kit::grid_card(ui, color, |ui| {
                 egui::Frame::new().inner_margin(Margin::same(12)).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         kit::remote_image(ui, db.image_url(&set.result).as_deref(), vec2(40.0, 40.0));
@@ -990,7 +1080,7 @@ impl InventoryView {
                                 let c = if set.complete > 0 { POSITIVE() } else { WARNING() };
                                 kit::pill(ui, &format!("{} complete", set.complete), c);
                                 if let Some(slug) = &set.slug {
-                                    kit::plat(ui, state.price(slug, None), 13.0);
+                                    kit::plat(ui, state.price(slug, Variant::Base), 13.0);
                                 }
                             });
                         });
@@ -1008,7 +1098,37 @@ impl InventoryView {
                     }
                 });
             });
+            if resp.on_hover_text("Open market listings").clicked() {
+                clicked = Some(i);
+            }
         });
+        cards = cards.heights(|i| heights[i]);
+        kit::grid_sections(ui, vec![cards]);
+
+        // Keep the open panel in step with the inventory: new counts after a
+        // refresh, closed once the set can no longer be put together.
+        if let Some(open) = &self.selected_set {
+            match sets.iter().find(|s| s.result == open.unique_name && s.slug.is_some()) {
+                Some(set) => self.selected_set = Some(set_row(set, db)),
+                None => {
+                    self.selected_set = None;
+                    self.selected = None;
+                }
+            }
+        }
+
+        let Some(set) = clicked.map(|i| &sets[i]) else { return };
+        let Some(slug) = set.slug.clone() else {
+            // Not listed as a set on warframe.market: show the item instead.
+            self.pending_open = Some(set.result.clone());
+            return;
+        };
+        let row = set_row(set, db);
+        self.selected = Some(set_key(&row.unique_name));
+        self.selected_set = Some(row);
+        self.rank_view = None;
+        backend.prices(PriceCmd::Request(vec![(slug.clone(), Variant::Base)]));
+        backend.market(MarketCmd::TopOrders { slug, variant: Variant::Base });
     }
 }
 

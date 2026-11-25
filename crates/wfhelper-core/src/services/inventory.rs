@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use super::item_database::{ItemDb, ItemKind};
 use super::rivens::{self, OwnedRiven};
+use super::wfm_stats_price::Variant;
 use super::wfm_catalog::Catalog;
 use crate::config::settings::InventorySource;
 
@@ -461,6 +462,34 @@ pub struct InventoryRow {
     pub level: Option<u32>,
     /// Equipment only: filled archon shard sockets.
     pub shards: Vec<ArchonShard>,
+    /// Relics only: warframe.market refinement ("intact" … "radiant").
+    pub subtype: Option<&'static str>,
+}
+
+impl InventoryRow {
+    /// Market pool this row is priced and traded in: relic refinement, or
+    /// rank 0 / max rank for ranked items (others share rank 0).
+    pub fn variant(&self) -> Variant {
+        if let Some(subtype) = self.subtype {
+            return Variant::Subtype(subtype);
+        }
+        match (self.rank, self.max_rank) {
+            (Some(r), Some(max)) if max > 0 => Variant::Rank(if r >= max { max } else { 0 }),
+            (_, Some(max)) if max > 0 => Variant::Rank(0),
+            _ => Variant::Base,
+        }
+    }
+}
+
+/// DE keeps each relic refinement as its own item (`…A1Bronze` … `…A1Platinum`);
+/// warframe.market has one item (`…A1`) with refinement subtypes.
+pub fn relic_refinement(unique: &str) -> Option<(&str, &'static str)> {
+    if !unique.contains("/Projections/") {
+        return None;
+    }
+    [("Bronze", "intact"), ("Silver", "exceptional"), ("Gold", "flawless"), ("Platinum", "radiant")]
+        .into_iter()
+        .find_map(|(suffix, subtype)| Some((unique.strip_suffix(suffix)?, subtype)))
 }
 
 /// Equipment level from XP (frames 1000·r², weapons 500·r²).
@@ -474,9 +503,25 @@ pub fn classify(inv: &Inventory, db: &ItemDb, catalog: &Catalog) -> Vec<Inventor
     let mut rows = Vec::with_capacity(inv.items.len() + inv.equipment.len());
     for item in &inv.items {
         let info = db.get(&item.unique_name);
-        let kind = info.map(|i| i.kind).unwrap_or(ItemKind::Other);
-        let name = db.name(&item.unique_name);
-        let wfm = catalog.by_game_ref(&item.unique_name);
+        let relic = relic_refinement(&item.unique_name);
+        let wfm = catalog.by_game_ref(relic.map_or(item.unique_name.as_str(), |(base, _)| base));
+        // Stacks DE's export does not list are internal bookkeeping (Helminth
+        // ability "blueprints", stickers, test keys, fake quest items): no name,
+        // no art, nothing to show. Equipment below is always real.
+        if info.is_none() && wfm.is_none() && !db.relics.contains_key(&item.unique_name) {
+            continue;
+        }
+        // A few real items are missing from DE's export but listed on
+        // warframe.market (Maglev, Clashing Forest, Abyssal Beacon): take the
+        // name, kind and art from there.
+        let market_only = if info.is_none() { wfm } else { None };
+        let kind = match (info, market_only) {
+            (Some(i), _) => i.kind,
+            (None, Some(w)) if w.tags.iter().any(|t| t == "mod") => ItemKind::Mod,
+            (None, Some(w)) if w.tags.iter().any(|t| t == "arcane_enhancement") => ItemKind::Arcane,
+            _ => ItemKind::Other,
+        };
+        let name = market_only.map(|w| w.name.clone()).unwrap_or_else(|| db.name(&item.unique_name));
         let tradable = wfm.is_some();
         let group = if db.relics.contains_key(&item.unique_name) {
             InventoryGroup::Relics
@@ -495,7 +540,7 @@ pub fn classify(inv: &Inventory, db: &ItemDb, catalog: &Catalog) -> Vec<Inventor
         rows.push(InventoryRow {
             is_prime_part: group == InventoryGroup::Parts && name.contains(" Prime ") && ducats.is_some(),
             max_rank: info.and_then(|i| i.max_rank).or_else(|| wfm.and_then(|w| w.max_rank)),
-            image_url: db.image_url(&item.unique_name),
+            image_url: db.image_url(&item.unique_name).or_else(|| market_only.and_then(|w| w.thumb_url())),
             wfm_slug: wfm.map(|w| w.slug.clone()),
             vaulted: info.is_some_and(|i| i.vaulted),
             unique_name: item.unique_name.clone(),
@@ -503,6 +548,7 @@ pub fn classify(inv: &Inventory, db: &ItemDb, catalog: &Catalog) -> Vec<Inventor
             rank: item.rank,
             level: None,
             shards: Vec::new(),
+            subtype: relic.map(|(_, s)| s),
             name,
             group,
             kind,
@@ -529,6 +575,7 @@ pub fn classify(inv: &Inventory, db: &ItemDb, catalog: &Catalog) -> Vec<Inventor
             vaulted: false,
             level: Some(level_from_xp(e.xp, kind.is_frame_like(), max_level)),
             shards: e.shard_slots.iter().flatten().cloned().collect(),
+            subtype: None,
         });
     }
     rows.sort_by(|a, b| a.name.cmp(&b.name));
@@ -558,6 +605,22 @@ mod tests {
         "PendingRecipes": [{"ItemType": "/Lotus/Types/Recipes/X", "CompletionDate": {"$date": {"$numberLong": "1700000000000"}}}],
         "Affiliations": [{"Tag": "ArbitersSyndicate", "Standing": 1234, "Title": 2}]
     }"#;
+
+    #[test]
+    fn relic_refinements_map_to_market_subtypes() {
+        let r = relic_refinement;
+        assert_eq!(r("/Lotus/Types/Game/Projections/T1VoidProjectionHydroidPrimeBBronze"), Some(("/Lotus/Types/Game/Projections/T1VoidProjectionHydroidPrimeB", "intact")));
+        assert_eq!(r("/Lotus/Types/Game/Projections/T1VoidProjectionUPlatinum").map(|x| x.1), Some("radiant"));
+        assert_eq!(r("/Lotus/Types/Items/MiscItems/OrokinCellGold"), None);
+    }
+
+    #[test]
+    fn hides_items_unknown_to_game_data() {
+        let inv = Inventory::parse_text(SAMPLE).unwrap();
+        let rows = classify(&inv, &ItemDb::default(), &Catalog::default());
+        assert!(rows.iter().all(|r| r.group == InventoryGroup::Equipment), "unknown stacks are dropped");
+        assert_eq!(rows.len(), inv.equipment.len());
+    }
 
     #[test]
     fn parses_sample() {

@@ -4,12 +4,13 @@ use std::sync::Arc;
 
 use crossbeam_channel::Receiver;
 use wfhelper_core::services::wfm_orders::{self, NewOrder};
+use wfhelper_core::services::wfm_stats_price::Variant;
 use wfhelper_core::services::{wfm_client, wfm_riven_search};
 
 use super::{Emitter, Event, ToastKind};
 
 pub enum MarketCmd {
-    TopOrders { slug: String, rank: Option<u32> },
+    TopOrders { slug: String, variant: Variant },
     SignIn { email: String, password: String },
     SignOut,
     MyOrders,
@@ -20,16 +21,16 @@ pub enum MarketCmd {
     RivenAuctions(String),
 }
 
-pub fn top_orders_key(slug: &str, rank: Option<u32>) -> String {
-    wfhelper_core::services::wfm_stats_price::price_key(slug, rank)
+pub fn top_orders_key(slug: &str, variant: Variant) -> String {
+    wfhelper_core::services::wfm_stats_price::price_key(slug, variant)
 }
 
 pub fn run(emitter: Emitter, rx: Receiver<MarketCmd>) {
     emitter.emit(Event::Session(wfm_client::session()));
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            MarketCmd::TopOrders { slug, rank } => match wfm_orders::top_orders(&slug, rank) {
-                Ok(orders) => emitter.emit(Event::TopOrders { key: top_orders_key(&slug, rank), orders }),
+            MarketCmd::TopOrders { slug, variant } => match wfm_orders::top_orders(&slug, variant) {
+                Ok(orders) => emitter.emit(Event::TopOrders { key: top_orders_key(&slug, variant), orders }),
                 Err(e) => emitter.toast(ToastKind::Error, format!("Order book for {slug}: {e}")),
             },
             MarketCmd::SignIn { email, password } => match wfm_client::sign_in(&email, &password) {

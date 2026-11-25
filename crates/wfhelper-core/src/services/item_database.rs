@@ -457,8 +457,11 @@ impl ItemDb {
         for v in exports.array("ExportUpgrades", "ExportUpgrades") {
             add(v, ItemKind::Mod, &mut db);
         }
+        // Railjack mods ("avionics") are mods like any other: Mods tab, rank,
+        // card art. "Unfused Artifact" entries are the fusion-material templates.
         for v in exports.array("ExportUpgrades", "ExportAvionics") {
-            add(v, ItemKind::Other, &mut db);
+            let template = v.get("name").and_then(Value::as_str) == Some("Unfused Artifact");
+            add(v, if template { ItemKind::Other } else { ItemKind::Mod }, &mut db);
         }
         for v in exports.array("ExportResources", "ExportResources") {
             let unique = v.get("uniqueName").and_then(Value::as_str).unwrap_or("");

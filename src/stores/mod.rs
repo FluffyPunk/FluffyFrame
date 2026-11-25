@@ -10,7 +10,7 @@ use wfhelper_core::services::api_helper_runner::HelperStatus;
 use wfhelper_core::services::arbi_schedule::ArbiSchedule;
 use wfhelper_core::services::drop_data::DropIndex;
 use wfhelper_core::services::ee_log_monitor::LogEvent;
-use wfhelper_core::services::inventory::{self, Inventory, InventoryGroup, InventoryRow};
+use wfhelper_core::services::inventory::{self, Inventory, InventoryGroup, InventoryRow, relic_refinement};
 use wfhelper_core::services::item_database::ItemDb;
 use wfhelper_core::services::stats_tracker::StatsHistory;
 use wfhelper_core::services::trade_tracker::TradeLog;
@@ -18,7 +18,7 @@ use wfhelper_core::services::wfm_catalog::Catalog;
 use wfhelper_core::services::wfm_client::Session;
 use wfhelper_core::services::wfm_orders::{Order, TopOrders};
 use wfhelper_core::services::wfm_riven_search::{RivenAuction, RivenWeapons};
-use wfhelper_core::services::wfm_stats_price::{Price, price_key};
+use wfhelper_core::services::wfm_stats_price::{Price, Variant, price_key};
 use wfhelper_core::services::world_state::WorldState;
 
 use crate::ipc::{Backend, Event, PriceCmd, ToastKind};
@@ -91,15 +91,6 @@ fn parent_index(db: &ItemDb) -> HashMap<String, String> {
         }
     }
     map
-}
-
-/// Rank a price is looked up at: ranked items use rank 0 or their max rank.
-pub fn price_rank(rank: Option<u32>, max_rank: Option<u32>) -> Option<u32> {
-    match (rank, max_rank) {
-        (Some(r), Some(max)) if max > 0 => Some(if r >= max { max } else { 0 }),
-        (_, Some(max)) if max > 0 => Some(0),
-        _ => None,
-    }
 }
 
 impl AppState {
@@ -238,38 +229,43 @@ impl AppState {
             }
         }
         // Price every tradable row in the background.
-        let wanted: Vec<(String, Option<u32>)> = self
-            .rows
-            .iter()
-            .filter_map(|r| Some((r.wfm_slug.clone()?, price_rank(r.rank, r.max_rank))))
-            .collect();
+        let wanted: Vec<(String, Variant)> = self.rows.iter().filter_map(|r| Some((r.wfm_slug.clone()?, r.variant()))).collect();
         if !wanted.is_empty() {
             backend.prices(PriceCmd::Request(wanted));
         }
     }
 
-    pub fn price(&self, slug: &str, rank: Option<u32>) -> Option<f64> {
-        self.prices.get(&price_key(slug, rank)).map(|p| p.average)
+    pub fn price(&self, slug: &str, variant: Variant) -> Option<f64> {
+        self.prices.get(&price_key(slug, variant)).map(|p| p.average)
     }
 
     pub fn row_price(&self, row: &InventoryRow) -> Option<f64> {
-        self.price(row.wfm_slug.as_deref()?, price_rank(row.rank, row.max_rank))
+        self.price(row.wfm_slug.as_deref()?, row.variant())
+    }
+
+    /// Market slug and pool for a DE unique name: relic refinements map to
+    /// their subtype, ranked items to rank 0.
+    pub fn market_ref(&self, unique: &str) -> Option<(String, Variant)> {
+        let catalog = self.catalog.as_ref()?;
+        if let Some((base, subtype)) = relic_refinement(unique) {
+            return Some((catalog.by_game_ref(base)?.slug.clone(), Variant::Subtype(subtype)));
+        }
+        let item = catalog.by_game_ref(unique)?;
+        Some((item.slug.clone(), if item.max_rank.is_some() { Variant::Rank(0) } else { Variant::Base }))
     }
 
     /// Price of an item by DE unique name (unranked).
     pub fn price_of_unique(&self, unique: &str) -> Option<f64> {
-        let item = self.catalog.as_ref()?.by_game_ref(unique)?;
-        let rank = item.max_rank.map(|_| 0);
-        self.price(&item.slug, rank)
+        let (slug, variant) = self.market_ref(unique)?;
+        self.price(&slug, variant)
     }
 
     /// Asks the price worker for these unique names.
     pub fn request_prices_for(&self, backend: &Backend, uniques: impl IntoIterator<Item = String>) {
-        let Some(catalog) = &self.catalog else { return };
         let wanted: Vec<_> = uniques
             .into_iter()
-            .filter_map(|u| catalog.by_game_ref(&u).map(|c| (c.slug.clone(), c.max_rank.map(|_| 0))))
-            .filter(|(slug, rank)| self.price(slug, *rank).is_none())
+            .filter_map(|u| self.market_ref(&u))
+            .filter(|(slug, variant)| self.price(slug, *variant).is_none())
             .collect();
         if !wanted.is_empty() {
             backend.prices(PriceCmd::Request(wanted));

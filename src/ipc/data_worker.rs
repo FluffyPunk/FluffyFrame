@@ -76,6 +76,8 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<DataCmd>) {
         Ok(g) => emitter.emit(Event::GoodRolls(Arc::new(g))),
         Err(e) => log::warn!("riven good rolls: {e:#}"),
     }
+    // The game export and drop table JSON are parsed and dropped by now.
+    crate::memory::trim();
 
     let mut notified_arbi: HashSet<i64> = HashSet::new();
     let mut seen_fissures: Option<HashSet<String>> = None;
