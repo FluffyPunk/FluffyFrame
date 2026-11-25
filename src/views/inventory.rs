@@ -123,6 +123,28 @@ impl Default for InventoryView {
     }
 }
 
+/// A full set as a market-panel row. Its count is what can be sold as a set:
+/// built weapons are account-bound and do not count.
+fn set_row(set: &full_sets::FullSet, db: &wfhelper_core::services::item_database::ItemDb) -> InventoryRow {
+    InventoryRow {
+        unique_name: set.result.clone(),
+        name: set.name.clone(),
+        group: InventoryGroup::Sets,
+        kind: db.get(&set.result).map_or(ItemKind::Other, |i| i.kind),
+        count: set.tradable_complete,
+        rank: None,
+        max_rank: None,
+        ducats: None,
+        wfm_slug: set.slug.clone(),
+        image_url: db.image_url(&set.result),
+        is_prime_part: false,
+        vaulted: false,
+        level: None,
+        shards: Vec::new(),
+        subtype: None,
+    }
+}
+
 /// Selection key of a full set, apart from the built item's own row.
 fn set_key(result: &str) -> String {
     format!("set:{result}")
@@ -299,6 +321,8 @@ impl InventoryView {
         if self.tab == InventoryGroup::Sets {
             self.market_side_panel(ui, state, backend, settings.keep_spare_copies);
             self.sets_ui(ui, state, backend);
+            // Post WTS/WTB from a set's panel opens this dialog.
+            self.sell_dialog(ui, state, backend);
             return;
         }
 
@@ -1022,10 +1046,12 @@ impl InventoryView {
             return;
         }
         // Sets are not inventory rows, so their prices are asked for here, once.
+        // Every set once, cached or not: the price worker skips fresh prices and
+        // refreshes expired ones.
         let missing: Vec<(String, Variant)> = sets
             .iter()
             .filter_map(|s| s.slug.clone())
-            .filter(|slug| state.price(slug, Variant::Base).is_none() && self.sets_requested.insert(slug.clone()))
+            .filter(|slug| self.sets_requested.insert(slug.clone()))
             .map(|slug| (slug, Variant::Base))
             .collect();
         if !missing.is_empty() {
@@ -1079,29 +1105,25 @@ impl InventoryView {
         cards = cards.heights(|i| heights[i]);
         kit::grid_sections(ui, vec![cards]);
 
+        // Keep the open panel in step with the inventory: new counts after a
+        // refresh, closed once the set can no longer be put together.
+        if let Some(open) = &self.selected_set {
+            match sets.iter().find(|s| s.result == open.unique_name && s.slug.is_some()) {
+                Some(set) => self.selected_set = Some(set_row(set, db)),
+                None => {
+                    self.selected_set = None;
+                    self.selected = None;
+                }
+            }
+        }
+
         let Some(set) = clicked.map(|i| &sets[i]) else { return };
         let Some(slug) = set.slug.clone() else {
             // Not listed as a set on warframe.market: show the item instead.
             self.pending_open = Some(set.result.clone());
             return;
         };
-        let row = InventoryRow {
-            unique_name: set.result.clone(),
-            name: set.name.clone(),
-            group: InventoryGroup::Sets,
-            kind: db.get(&set.result).map_or(ItemKind::Other, |i| i.kind),
-            count: set.complete,
-            rank: None,
-            max_rank: None,
-            ducats: None,
-            wfm_slug: Some(slug.clone()),
-            image_url: db.image_url(&set.result),
-            is_prime_part: false,
-            vaulted: false,
-            level: None,
-            shards: Vec::new(),
-            subtype: None,
-        };
+        let row = set_row(set, db);
         self.selected = Some(set_key(&row.unique_name));
         self.selected_set = Some(row);
         self.rank_view = None;

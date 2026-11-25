@@ -217,13 +217,19 @@ pub fn install_thumbnails(ctx: &egui::Context) {
                     let (uri, bytes, max_px) = jobs.pop();
                     // Scrolled away before its turn: drop it; drawing the card
                     // again re-queues it (the bytes stay in the disk cache).
-                    {
+                    let stale = {
                         let mut s = state.lock();
                         let pass = s.pass;
-                        if s.thumbs.get(&uri).is_some_and(|t| t.last_used + THUMB_STALE_PASSES < pass) {
+                        let stale = s.thumbs.get(&uri).is_some_and(|t| t.last_used + THUMB_STALE_PASSES < pass);
+                        if stale {
                             s.thumbs.remove(&uri);
-                            continue;
                         }
+                        stale
+                    };
+                    if stale {
+                        // Not under our lock.
+                        forget_bytes(&ctx, &uri);
+                        continue;
                     }
                     let result = decode_thumbnail(&bytes, max_px).map(Arc::new);
                     drop(bytes);
@@ -239,9 +245,7 @@ pub fn install_thumbnails(ctx: &egui::Context) {
                     };
                     // The downloaded bytes are no longer needed in memory (the
                     // disk cache keeps them). Not under our lock.
-                    for loader in ctx.loaders().bytes.lock().iter() {
-                        loader.forget(&uri);
-                    }
+                    forget_bytes(&ctx, &uri);
                     if stored {
                         ctx.request_repaint();
                     }
@@ -249,7 +253,15 @@ pub fn install_thumbnails(ctx: &egui::Context) {
             })
             .expect("spawn image decode worker");
     }
+    // Added last, so egui consults it first for every texture request.
+    ctx.add_texture_loader(Arc::new(RecencyTracker { state: state.clone() }));
     ctx.add_image_loader(Arc::new(ThumbnailLoader { state, decode }));
+}
+
+fn forget_bytes(ctx: &egui::Context, uri: &str) {
+    for loader in ctx.loaders().bytes.lock().iter() {
+        loader.forget(uri);
+    }
 }
 
 /// Frees textures of evicted thumbnails; call once per frame outside egui's
@@ -259,6 +271,47 @@ pub fn release_evicted(ctx: &egui::Context) {
     let evicted = std::mem::take(&mut state.lock().evicted);
     for uri in evicted {
         ctx.forget_image(&uri);
+        // egui keys WebP textures by their frame URI (`…webp#0`).
+        ctx.forget_image(&format!("{uri}#0"));
+    }
+}
+
+/// Marks remote images as drawn, then declines so egui's own texture loader
+/// serves them. egui answers cached textures without asking the image loader
+/// again, so this is the only place that sees every draw: without it, images
+/// on screen would look unused and get evicted (and flicker as they reload).
+struct RecencyTracker {
+    state: Arc<Mutex<ThumbState>>,
+}
+
+impl egui::load::TextureLoader for RecencyTracker {
+    fn id(&self) -> &str {
+        egui::generate_loader_id!(RecencyTracker)
+    }
+
+    fn load(
+        &self,
+        _ctx: &egui::Context,
+        uri: &str,
+        _options: egui::TextureOptions,
+        _size_hint: egui::SizeHint,
+    ) -> egui::load::TextureLoadResult {
+        if uri.starts_with("https://") || uri.starts_with("http://") {
+            let mut state = self.state.lock();
+            let pass = state.pass;
+            if let Some(t) = state.thumbs.get_mut(base_uri(uri)) {
+                t.last_used = pass;
+            }
+        }
+        Err(LoadError::NotSupported)
+    }
+
+    fn forget(&self, _uri: &str) {}
+
+    fn forget_all(&self) {}
+
+    fn byte_size(&self) -> usize {
+        0
     }
 }
 
