@@ -6,9 +6,13 @@
 //! - `crates/wfhelper-core` ≈ original `config/` + `services/`
 //! - `crates/wf-api` = FluffyPunk's wf-api-rust as a library (inventory from the game)
 
+// Release builds on Windows run as a GUI app: no console window alongside it.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app;
 mod assets;
 mod components;
+mod console;
 mod image_loader;
 mod ipc;
 mod memory;
@@ -18,6 +22,7 @@ mod theme_presets;
 mod views;
 
 fn main() -> eframe::Result<()> {
+    console::attach_parent();
     memory::limit_arenas();
     wfhelper_core::services::logger::init();
     log::info!("starting WFHelper {}", env!("CARGO_PKG_VERSION"));
