@@ -129,7 +129,7 @@ impl RelicsView {
         ui.horizontal(|ui| {
             kit::page_title(ui, &format!("Relic Planner ({} relics)", entries.len()), None);
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let tabs: Vec<(Option<RelicEra>, String)> =
                 std::iter::once((None, "All".to_string())).chain(RelicEra::ALL.iter().map(|e| (Some(*e), e.label().to_string()))).collect();
             ui.allocate_ui(vec2(470.0, 40.0), |ui| kit::tabs(ui, &mut self.era, &tabs));

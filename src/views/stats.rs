@@ -126,11 +126,17 @@ impl StatsView {
         kit::page_title(ui, "Stats", None);
         kit::tabs(ui, &mut 0, &[(0, "Tracking".into())]);
 
-        egui::Panel::right("trade-history")
-            .resizable(false)
-            .exact_size(300.0)
-            .frame(egui::Frame::new().inner_margin(Margin { left: 16, right: 0, top: 0, bottom: 0 }))
-            .show(ui, |ui| self.trades(ui, state));
+        // Trade history docks on the right when the charts still get a usable
+        // width beside it; otherwise it goes below them.
+        const SIDE: f32 = 300.0;
+        let docked = ui.available_width() >= SIDE + 560.0;
+        if docked {
+            egui::Panel::right("trade-history")
+                .resizable(false)
+                .exact_size(SIDE)
+                .frame(egui::Frame::new().inner_margin(Margin { left: 16, right: 0, top: 0, bottom: 0 }))
+                .show(ui, |ui| self.trades(ui, state));
+        }
 
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -151,10 +157,12 @@ impl StatsView {
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             kit::card(ui, |ui| {
                 ui.set_width(ui.available_width());
-                // Top-aligned: a centered wrapping row steps each metric down a
-                // little as the row grows.
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true), |ui| {
-                    for m in &ms {
+                // A grid, as many per row as fit: in a wrapping row each metric
+                // lands a little lower than the one before.
+                let per_row = kit::balanced(kit::fit_columns(ui, 160.0, ms.len()), ms.len());
+                for row in ms.chunks(per_row) {
+                    ui.columns(per_row, |cols| {
+                    for (ui, m) in cols.iter_mut().zip(row) {
                         let v = (m.get)(&today);
                         let d = v as i64 - (m.get)(&yesterday) as i64;
                         ui.horizontal(|ui| {
@@ -168,14 +176,15 @@ impl StatsView {
                                 ui.label(RichText::new(format!("{}{} today", if d >= 0 { "+" } else { "−" }, format::compact(d.unsigned_abs()))).size(11.0).color(TEXT_MUTED()));
                             });
                         });
-                        ui.add_space(14.0);
                     }
-                });
+                    });
+                }
             });
             ui.add_space(10.0);
-            ui.columns(2, |cols| {
+            let per_row = kit::fit_columns(ui, 300.0, 2);
+            ui.columns(per_row, |cols| {
                 for (i, m) in ms.iter().enumerate() {
-                    let ui = &mut cols[i % 2];
+                    let ui = &mut cols[i % per_row];
                     let series: Vec<_> = state.stats.series(m.get).into_iter().filter(|(d, _, _)| *d >= cutoff).collect();
                     kit::card(ui, |ui| {
                         ui.set_width(ui.available_width());
@@ -188,6 +197,12 @@ impl StatsView {
                     ui.add_space(10.0);
                 }
             });
+            if !docked {
+                kit::card(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    self.trades(ui, state);
+                });
+            }
         });
     }
 

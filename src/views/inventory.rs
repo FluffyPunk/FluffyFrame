@@ -337,7 +337,7 @@ impl InventoryView {
         let sorts: &[Sort] = if market_tab { &Sort::ALL } else { &[Sort::Name, Sort::Count] };
 
         // Toolbar: search, sort, direction, bulk sell, filters.
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             kit::search(ui, &mut self.search, "Search...", 240.0);
             kit::labelled(ui, "Sort", |ui| {
                 egui::ComboBox::from_id_salt("inv-sort").width(150.0).selected_text(self.sort.label()).show_ui(ui, |ui| {
@@ -360,7 +360,7 @@ impl InventoryView {
             }
         });
         if market_tab && self.filters_open {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.checkbox(&mut self.vaulted_only, "Vaulted only");
                 ui.checkbox(&mut self.tradable_only, "Tradable only");
             });
@@ -373,7 +373,7 @@ impl InventoryView {
         }
 
         if self.tab == InventoryGroup::Everything {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("Include").size(11.5).color(TEXT_MUTED()));
                 for g in InventoryGroup::TABS.iter().filter(|g| !matches!(g, InventoryGroup::Everything | InventoryGroup::Sets)) {
                     let on = self.include.contains(g);
@@ -390,7 +390,7 @@ impl InventoryView {
         }
 
         if self.bulk_mode {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(format!("{} selected", self.bulk_selected.len())).color(ACCENT()));
                 if kit::ghost_button(ui, "Select all tradable").clicked() {
                     self.bulk_selected.extend(rows.iter().filter(|r| r.wfm_slug.is_some()).map(|r| row_key(r)));
@@ -637,7 +637,7 @@ impl InventoryView {
             (plat, ducats, unpriced)
         };
         let (plat, ducats, unpriced) = total(&mut rows.iter().copied());
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             kit::caption(ui, "Est. value");
             ui.add_space(8.0);
             ui.label(RichText::new("In view").size(12.0).color(TEXT_SECONDARY()));

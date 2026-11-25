@@ -85,13 +85,16 @@ impl DashboardView {
                 let list: Vec<_> = if sp.is_empty() { ws.fissures.iter().filter(|f| !f.storm).collect() } else { sp };
                 kit::caption(ui, if list.first().is_some_and(|f| f.steel_path) { "Steel Path" } else { "Normal" });
                 for f in list.iter().take(6) {
-                    ui.horizontal(|ui| {
-                        kit::pill(ui, &f.tier, theme::era_color(&f.tier));
-                        ui.label(RichText::new(format!("{} · {}", f.mission_type, f.node)).color(TEXT_SECONDARY()));
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    kit::split_row(
+                        ui,
+                        |ui| {
+                            kit::pill(ui, &f.tier, theme::era_color(&f.tier));
+                            ui.label(RichText::new(format!("{} · {}", f.mission_type, f.node)).color(TEXT_SECONDARY()));
+                        },
+                        |ui| {
                             ui.label(format::until(f.expiry));
-                        });
-                    });
+                        },
+                    );
                 }
                 if list.len() > 6 {
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
@@ -112,17 +115,20 @@ impl DashboardView {
                     kit::empty(ui, "Nothing building", "Start a build in the Foundry.");
                 }
                 for p in pending.iter().take(6) {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(&p.name).color(TEXT_SECONDARY()));
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| match p.completes_at {
+                    kit::split_row(
+                        ui,
+                        |ui| {
+                            ui.label(RichText::new(&p.name).color(TEXT_SECONDARY()));
+                        },
+                        |ui| match p.completes_at {
                             Some(t) if t <= Utc::now() => {
                                 kit::caption(ui, "Ready to claim");
                             }
                             t => {
                                 ui.label(format::until(t));
                             }
-                        });
-                    });
+                        },
+                    );
                 }
                 if pending.len() > 6 {
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
@@ -148,12 +154,25 @@ impl DashboardView {
         if let Some(inv) = &state.inventory {
             widget(ui, assets::PLATINUM, "Wallet", Some((go, ViewName::Stats)), |ui| {
                 let c = &inv.currencies;
-                ui.columns(4, |cols| {
-                    currency(&mut cols[0], assets::PLATINUM, "Platinum", format::int(c.platinum));
-                    currency(&mut cols[1], assets::DUCATS_SMALL, "Ducats", format::int(c.ducats));
-                    currency(&mut cols[2], assets::AYA, "Aya", format::int(c.aya));
-                    currency(&mut cols[3], assets::MASTERY, "Mastery Rank", inv.mastery_rank.to_string());
-                });
+                let items = [
+                    (assets::PLATINUM, "Platinum", format::int(c.platinum)),
+                    (assets::DUCATS_SMALL, "Ducats", format::int(c.ducats)),
+                    (assets::AYA, "Aya", format::int(c.aya)),
+                    (assets::MASTERY, "Mastery Rank", inv.mastery_rank.to_string()),
+                ];
+                // 4, 2 or 1 per row: each needs about 120px before its label wraps.
+                let per_row = match (ui.available_width() / 120.0) as usize {
+                    0 | 1 => 1,
+                    2 | 3 => 2,
+                    _ => 4,
+                };
+                for row in items.chunks(per_row) {
+                    ui.columns(per_row, |cols| {
+                        for (col, (icon, label, value)) in cols.iter_mut().zip(row) {
+                            currency(col, icon.clone(), label, value.clone());
+                        }
+                    });
+                }
             });
 
             widget(ui, assets::view_icon(ViewName::Inventory), "Est. value", Some((go, ViewName::Inventory)), |ui| {
@@ -196,13 +215,16 @@ impl DashboardView {
             widget(ui, assets::view_icon(ViewName::World), "Arbitration", Some((go, ViewName::World)), |ui| {
                 let r = db.regions.get(&cur.node_id);
                 kit::caption(ui, r.map(|r| r.faction.as_str()).unwrap_or(""));
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(db.node_label(&cur.node_id)).family(theme::body_strong()));
-                    ui.label(RichText::new(r.map(|r| r.mission_type.as_str()).unwrap_or("")).color(TEXT_SECONDARY()));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                kit::split_row(
+                    ui,
+                    |ui| {
+                        ui.label(RichText::new(db.node_label(&cur.node_id)).family(theme::body_strong()));
+                        ui.label(RichText::new(r.map(|r| r.mission_type.as_str()).unwrap_or("")).color(TEXT_SECONDARY()));
+                    },
+                    |ui| {
                         ui.label(format::until(Some(cur.end())));
-                    });
-                });
+                    },
+                );
             });
         }
     }

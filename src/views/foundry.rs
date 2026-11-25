@@ -91,7 +91,7 @@ impl FoundryView {
 
         kit::page_title(ui, "Foundry", None);
         ui.add_space(6.0);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             kit::search(ui, &mut self.search, "Search...", 220.0);
             kit::labelled(ui, "Prime", |ui| {
                 egui::ComboBox::from_id_salt("prime")

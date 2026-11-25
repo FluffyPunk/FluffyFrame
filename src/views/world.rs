@@ -105,36 +105,48 @@ impl WorldView {
                 ui.label(RichText::new(format!("Daily reset: {}   Weekly resets: {}", format::until(ws.daily_reset), format::until(ws.weekly_reset))).size(11.5).color(TEXT_MUTED()));
             });
             ui.add_space(4.0);
-            ui.columns(4, |cols| {
-                let week = ws.weekly_reset;
-                if let Some(a) = &ws.archon_hunt {
-                    let shard = fluffyframe_core::services::world_state::archon_shard(&a.boss);
-                    week_card(&mut cols[0], "Archon Hunt", counter("archonHunt", a.expiry), 1, &format!("Boss: {} - {shard} Archon Shard this week", a.boss), a.expiry);
-                }
-                if let Some(c) = &ws.circuit {
-                    week_card(&mut cols[1], "The Circuit (Steel Path)", counter("circuitSteelPath", week), 1, &c.steel_path.join(" - "), c.expiry);
-                }
-                week_card(&mut cols[2], "Netracells", counter("netracells", week), 5, "", week);
-                if let Some(sp) = &ws.steel_path {
-                    week_card(&mut cols[3], "Steel Path Honors (Teshin)", counter("steelPathHonors", week), 1, &format!("{} - {} Steel Essence", sp.reward, sp.cost), Some(sp.expiry));
-                }
-            });
+            let week = ws.weekly_reset;
+            let mut cards: Vec<WeekCard> = Vec::new();
+            if let Some(a) = &ws.archon_hunt {
+                let shard = fluffyframe_core::services::world_state::archon_shard(&a.boss);
+                cards.push(("Archon Hunt", counter("archonHunt", a.expiry), 1, format!("Boss: {} - {shard} Archon Shard this week", a.boss), a.expiry));
+            }
+            if let Some(c) = &ws.circuit {
+                cards.push(("The Circuit (Steel Path)", counter("circuitSteelPath", week), 1, c.steel_path.join(" - "), c.expiry));
+            }
+            cards.push(("Netracells", counter("netracells", week), 5, String::new(), week));
+            if let Some(sp) = &ws.steel_path {
+                cards.push(("Steel Path Honors (Teshin)", counter("steelPathHonors", week), 1, format!("{} - {} Steel Essence", sp.reward, sp.cost), Some(sp.expiry)));
+            }
+            let per_row = kit::balanced(kit::fit_columns(ui, 220.0, cards.len()), cards.len());
+            for row in cards.chunks(per_row) {
+                ui.columns(per_row, |cols| {
+                    for (col, (title, done, target, detail, resets)) in cols.iter_mut().zip(row) {
+                        week_card(col, title, *done, *target, detail, *resets);
+                    }
+                });
+            }
             ui.add_space(10.0);
 
-            ui.columns(2, |cols| {
-                let ui = &mut cols[0];
+            // Two columns, stacked on narrow windows.
+            kit::responsive_columns(ui, 420.0, 2, |ui, col| {
+                if col == 0 {
                 section(ui, "Planet Cycles", |ui| {
-                    ui.columns(2, |c| {
+                    let per_row = kit::fit_columns(ui, 260.0, 2);
+                    ui.columns(per_row, |c| {
                         for (n, cy) in ws.cycles.iter().enumerate() {
-                            let ui = &mut c[n % 2];
-                            ui.horizontal(|ui| {
-                                kit::icon(ui, assets::cycle_icon(cy.name), 30.0);
-                                ui.label(RichText::new(cy.name).family(theme::body_strong()));
-                                kit::pill(ui, cy.state, cycle_color(cy.state));
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let ui = &mut c[n % per_row];
+                            kit::split_row(
+                                ui,
+                                |ui| {
+                                    kit::icon(ui, assets::cycle_icon(cy.name), 30.0);
+                                    ui.label(RichText::new(cy.name).family(theme::body_strong()));
+                                    kit::pill(ui, cy.state, cycle_color(cy.state));
+                                },
+                                |ui| {
                                     ui.label(RichText::new(format::until(Some(cy.ends_at))).family(theme::body_strong()));
-                                });
-                            });
+                                },
+                            );
                             ui.add_space(4.0);
                         }
                     });
@@ -147,10 +159,15 @@ impl WorldView {
                         ("Steel Path Honors", ws.steel_path.as_ref().map(|s| s.expiry)),
                     ];
                     for (l, t) in rows {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(l).color(TEXT_SECONDARY()));
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(format::until(t)));
-                        });
+                        kit::split_row(
+                            ui,
+                            |ui| {
+                                ui.label(RichText::new(l).color(TEXT_SECONDARY()));
+                            },
+                            |ui| {
+                                ui.label(format::until(t));
+                            },
+                        );
                     }
                 });
                 if let Some(pr) = &ws.prime_resurgence {
@@ -183,7 +200,7 @@ impl WorldView {
                     });
                 }
                 section(ui, "Void Fissures", |ui| {
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         for (f, l) in [(FissureFilter::Normal, "Normal"), (FissureFilter::SteelPath, "Steel Path"), (FissureFilter::Storms, "Void Storms")] {
                             if kit::chip(ui, self.fissures == f, l).clicked() {
                                 self.fissures = f;
@@ -207,17 +224,22 @@ impl WorldView {
                         if self.tier.is_some_and(|t| t != f.tier) {
                             continue;
                         }
-                        ui.horizontal(|ui| {
-                            kit::icon(ui, assets::relic_icon(&f.tier), 20.0);
-                            kit::pill(ui, &f.tier, theme::era_color(&f.tier));
-                            ui.label(RichText::new(&f.mission_type).family(theme::body_strong()));
-                            ui.label(RichText::new(&f.node).color(TEXT_SECONDARY()));
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(format::until(f.expiry)));
-                        });
+                        kit::split_row(
+                            ui,
+                            |ui| {
+                                kit::icon(ui, assets::relic_icon(&f.tier), 20.0);
+                                kit::pill(ui, &f.tier, theme::era_color(&f.tier));
+                                ui.label(RichText::new(&f.mission_type).family(theme::body_strong()));
+                                ui.label(RichText::new(&f.node).color(TEXT_SECONDARY()));
+                            },
+                            |ui| {
+                                ui.label(format::until(f.expiry));
+                            },
+                        );
                     }
                 });
 
-                let ui = &mut cols[1];
+                } else {
                 section(ui, "Invasions", |ui| {
                     for inv in &ws.invasions {
                         ui.label(RichText::new(&inv.node).font(FontId::new(16.0, theme::display_bold())));
@@ -266,11 +288,16 @@ impl WorldView {
                 if !ws.alerts.is_empty() {
                     section(ui, "Alerts", |ui| {
                         for a in &ws.alerts {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(&a.mission_type).family(theme::body_strong()));
-                                ui.label(RichText::new(&a.node).color(TEXT_SECONDARY()));
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(format::until(a.expiry)));
-                            });
+                            kit::split_row(
+                                ui,
+                                |ui| {
+                                    ui.label(RichText::new(&a.mission_type).family(theme::body_strong()));
+                                    ui.label(RichText::new(&a.node).color(TEXT_SECONDARY()));
+                                },
+                                |ui| {
+                                    ui.label(format::until(a.expiry));
+                                },
+                            );
                             ui.label(RichText::new(&a.reward).size(12.0).color(ACCENT()));
                         }
                     });
@@ -286,6 +313,7 @@ impl WorldView {
                             });
                     }
                 });
+                }
             });
         });
         if let Some(u) = open {
@@ -399,17 +427,23 @@ fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
     ui.add_space(8.0);
 }
 
+/// (title, done, target, detail, resets) for [`week_card`].
+type WeekCard<'a> = (&'a str, u32, u32, String, Option<chrono::DateTime<Utc>>);
+
 fn week_card(ui: &mut Ui, title: &str, done: u32, target: u32, detail: &str, resets: Option<chrono::DateTime<Utc>>) {
     kit::card(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.set_min_height(72.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(title).family(theme::body_strong()));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        kit::split_row(
+            ui,
+            |ui| {
+                ui.label(RichText::new(title).family(theme::body_strong()));
+            },
+            |ui| {
                 let color = if done >= target { POSITIVE() } else { TEXT_MUTED() };
                 ui.label(RichText::new(format!("{done}/{target}")).size(12.0).color(color));
-            });
-        });
+            },
+        );
         if !detail.is_empty() {
             ui.label(RichText::new(detail).size(12.0).color(TEXT_SECONDARY()));
         }

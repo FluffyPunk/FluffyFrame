@@ -46,7 +46,8 @@ pub fn page_subtitle(ui: &mut Ui, text: &str) {
 pub fn tabs<T: PartialEq + Copy>(ui: &mut Ui, current: &mut T, items: &[(T, String)]) -> bool {
     let mut changed = false;
     let (left, width) = (ui.cursor().left(), ui.available_width());
-    let row = ui.horizontal(|ui| {
+    // Wraps on narrow windows instead of pushing the page wider.
+    let row = ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         for (value, label) in items {
             let selected = *current == *value;
@@ -318,7 +319,7 @@ pub fn grid_card(ui: &mut Ui, highlight: Option<Color32>, add: impl FnOnce(&mut 
 
 /// Big number + label, as in Mastery's summary strip.
 pub fn big_stat(ui: &mut Ui, value: &str, label: &str, color: Color32) {
-    ui.horizontal(|ui| {
+    keep_together(ui, |ui| {
         ui.label(RichText::new(value).font(FontId::new(40.0, theme::display_bold())).color(color));
         ui.label(RichText::new(label).font(FontId::new(22.0, theme::display())).color(TEXT_SECONDARY()));
     });
@@ -386,16 +387,78 @@ pub fn empty(ui: &mut Ui, title: &str, body: &str) {
 }
 
 /// A labelled select-like ComboBox in the filter bar.
+/// `add` as one unit in a wrapping row. egui wraps a row only before a plain
+/// widget, whose size it knows; a group (label + combo, number + caption) is
+/// placed first and overflows. This remembers the group's width from the last
+/// frame and starts a new line when it won't fit.
+pub fn keep_together<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let id = ui.next_auto_id().with("keep-together");
+    let width: Option<f32> = ui.data(|d| d.get_temp(id));
+    let mid_row = ui.cursor().left() > ui.max_rect().left() + 0.5;
+    if ui.layout().main_wrap && mid_row && width.is_some_and(|w| w > ui.available_size_before_wrap().x) {
+        ui.end_row();
+    }
+    let r = ui.horizontal(add);
+    ui.data_mut(|d| d.insert_temp(id, r.response.rect.width()));
+    r.inner
+}
+
+/// `n` side-by-side columns when each can be at least `min_width` wide, else
+/// stacked; `add(ui, column)` fills column `column` either way.
+pub fn responsive_columns(ui: &mut Ui, min_width: f32, n: usize, mut add: impl FnMut(&mut Ui, usize)) {
+    let gap = ui.spacing().item_spacing.x;
+    if ui.available_width() + gap >= n as f32 * (min_width + gap) {
+        ui.columns(n, |cols| {
+            for (i, col) in cols.iter_mut().enumerate() {
+                add(col, i);
+            }
+        });
+    } else {
+        for i in 0..n {
+            add(ui, i);
+        }
+    }
+}
+
+/// How many `min_width` cells fit in a row (at least 1, at most `max`).
+pub fn fit_columns(ui: &Ui, min_width: f32, max: usize) -> usize {
+    let gap = ui.spacing().item_spacing.x;
+    (((ui.available_width() + gap) / (min_width + gap)) as usize).clamp(1, max)
+}
+
+/// Per-row count for `n` items when at most `fit` fit in a row, spread evenly
+/// over the rows needed (7 with room for 6 → 4 + 3, not 6 + 1).
+pub fn balanced(fit: usize, n: usize) -> usize {
+    let rows = n.div_ceil(fit.max(1)).max(1);
+    n.div_ceil(rows).max(1)
+}
+
+/// A row with `right` (a timer, a value) right-aligned and `left` in the space
+/// that remains, truncated instead of running underneath `right` on narrow windows.
+pub fn split_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            right(ui);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                left(ui);
+            });
+        });
+    });
+}
+
 pub fn labelled<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
-    ui.label(RichText::new(label).size(11.5).color(TEXT_MUTED()));
-    add(ui)
+    keep_together(ui, |ui| {
+        ui.label(RichText::new(label).size(11.5).color(TEXT_MUTED()));
+        add(ui)
+    })
 }
 
 
 /// Segmented control (original: `SegmentedControl.svelte`); returns true on change.
 pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str)]) -> bool {
     let mut changed = false;
-    Frame::new()
+    keep_together(ui, |ui| Frame::new()
         .fill(BG_RAISED())
         .stroke(Stroke::new(1.0, BORDER()))
         .corner_radius(RADIUS_SM())
@@ -416,7 +479,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
                     }
                 }
             });
-        });
+        }));
     changed
 }
 

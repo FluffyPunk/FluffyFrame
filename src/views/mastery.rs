@@ -61,8 +61,38 @@ impl MasteryView {
 
         let mut open: Option<String> = None;
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            // The ring + one-row summary needs about 1050px; narrower windows
+            // get the same numbers in a wrapping card.
+            let pct = summary.mastered as f32 / summary.total.max(1) as f32;
+            if ui.available_width() < 1050.0 {
+                kit::card(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    // A grid, as many per row as fit (a wrapping row steps each
+                    // stat a little lower), then MR on its own line.
+                    let stats = [
+                        (format!("{:.1}%", pct * 100.0), "Complete", INFO()),
+                        (summary.mastered.to_string(), "Mastered", POSITIVE()),
+                        (in_progress.to_string(), "In Progress", WARNING()),
+                        (missing.to_string(), "Missing", NEGATIVE()),
+                        (summary.total.to_string(), "Total", TEXT()),
+                    ];
+                    let per_row = kit::balanced(kit::fit_columns(ui, 200.0, stats.len()), stats.len());
+                    for row in stats.chunks(per_row) {
+                        ui.columns(per_row, |cols| {
+                            for (ui, (value, label, color)) in cols.iter_mut().zip(row) {
+                                kit::big_stat(ui, value, label, *color);
+                            }
+                        });
+                    }
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("MR {}", inv.mastery_rank)).font(FontId::new(40.0, theme::display_bold())));
+                        ui.label(RichText::new(format!("{} XP from item ranks", format::int(summary.points))).color(TEXT_SECONDARY()));
+                    });
+                });
+            } else {
             ui.horizontal(|ui| {
-                kit::ring(ui, summary.mastered as f32 / summary.total.max(1) as f32, 118.0, INFO(), "Mastered");
+                kit::ring(ui, pct, 118.0, INFO(), "Mastered");
                 ui.add_space(8.0);
                 kit::card(ui, |ui| {
                     // As tall as the ring beside it (118 minus the card's 14px
@@ -108,6 +138,7 @@ impl MasteryView {
                     });
                 });
             });
+            }
             ui.add_space(10.0);
 
             let easy_xp: u64 = easy.iter().map(|r| remaining_xp(r)).sum();

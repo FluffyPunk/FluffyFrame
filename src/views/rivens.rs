@@ -260,7 +260,9 @@ impl RivensView {
     }
 
     fn toolbar(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
+        // One wrapping row, left to right: a right-aligned group overflows
+        // leftwards over the search box on narrow windows.
+        ui.horizontal_wrapped(|ui| {
             kit::search(ui, &mut self.search, "Search...", 220.0);
             kit::labelled(ui, "Sort", |ui| {
                 let label = Sort::ALL.iter().find(|(s, _)| *s == self.sort).map(|(_, l)| *l).unwrap_or("");
@@ -273,7 +275,19 @@ impl RivensView {
             if kit::chip(ui, true, if self.descending { "⬇" } else { "⬆" }).on_hover_text("Sort direction").clicked() {
                 self.descending = !self.descending;
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let mut t = self.type_filter;
+            let options: Vec<(&'static str, &str)> = TYPES.iter().map(|t| (*t, *t)).collect();
+            if kit::segmented(ui, &mut t, &options) {
+                self.type_filter = t;
+            }
+            kit::labelled(ui, "Grade", |ui| {
+                egui::ComboBox::from_id_salt("riven-grade").width(60.0).selected_text(self.grade_filter).show_ui(ui, |ui| {
+                    for g in GRADES {
+                        ui.selectable_value(&mut self.grade_filter, g, g);
+                    }
+                });
+            });
+            kit::labelled(ui, "Attribute grade", |ui| {
                 let attr_label = self.attr_filter.map(AttrGrade::label).unwrap_or("All");
                 egui::ComboBox::from_id_salt("riven-attr").width(80.0).selected_text(attr_label).show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.attr_filter, None, "All");
@@ -281,18 +295,6 @@ impl RivensView {
                         ui.selectable_value(&mut self.attr_filter, Some(g), g.label());
                     }
                 });
-                ui.label(RichText::new("Attribute grade").size(11.5).color(TEXT_MUTED()));
-                egui::ComboBox::from_id_salt("riven-grade").width(60.0).selected_text(self.grade_filter).show_ui(ui, |ui| {
-                    for g in GRADES {
-                        ui.selectable_value(&mut self.grade_filter, g, g);
-                    }
-                });
-                ui.label(RichText::new("Grade").size(11.5).color(TEXT_MUTED()));
-                let mut t = self.type_filter;
-                let options: Vec<(&'static str, &str)> = TYPES.iter().rev().map(|t| (*t, *t)).collect();
-                if kit::segmented(ui, &mut t, &options) {
-                    self.type_filter = t;
-                }
             });
         });
     }
