@@ -19,6 +19,10 @@ pub enum InventoryCmd {
     RefreshNow,
     /// EE.log saw a login: read shortly after.
     LoginDetected,
+    /// EE.log saw something that changes the inventory (mission end, trade,
+    /// purchase, the game re-syncing it); the reason is for the log. Bursts
+    /// collapse into one read: see [`SETTLE`] and [`MAX_DEFER`].
+    GameChanged(&'static str),
     Import(PathBuf),
     Export(PathBuf),
     /// The source setting changed.
@@ -27,6 +31,11 @@ pub enum InventoryCmd {
 
 /// Wait after a login before scanning, so the token is in memory.
 const AFTER_LOGIN: Duration = Duration::from_secs(15);
+/// After a change, wait this long (from the latest one) for the game to save
+/// and for follow-up events: mission end, then the sync, arrive together.
+const SETTLE: Duration = Duration::from_secs(20);
+/// A steady stream of changes defers the read at most this long past the first.
+const MAX_DEFER: Duration = Duration::from_secs(90);
 
 pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<InventoryCmd>) {
     if let Some((inv, meta)) = inventory_import::load_snapshot() {
@@ -36,6 +45,8 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<InventoryCmd>) {
     let mut status = HelperStatus::default();
     // First game read soon after startup.
     let mut next_run = Instant::now() + Duration::from_secs(3);
+    // First change since the last read, while a change-triggered read is pending.
+    let mut changed_since: Option<Instant> = None;
     loop {
         let wait = next_run.saturating_duration_since(Instant::now());
         match rx.recv_timeout(wait) {
@@ -44,6 +55,10 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<InventoryCmd>) {
                 if status.last_ok != Some(true) || status.last_run.is_none_or(|t| Utc::now() - t > chrono::Duration::minutes(2)) {
                     next_run = Instant::now() + AFTER_LOGIN;
                 }
+            }
+            Ok(InventoryCmd::GameChanged(reason)) => {
+                next_run = after_change(Instant::now(), &mut changed_since, next_run);
+                log::info!("inventory refresh queued: {reason}");
             }
             Ok(InventoryCmd::SourceChanged) => next_run = Instant::now() + Duration::from_secs(1),
             Ok(InventoryCmd::Import(path)) => {
@@ -82,6 +97,7 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<InventoryCmd>) {
             continue;
         }
 
+        changed_since = None;
         status.running = true;
         emitter.emit(Event::Helper(status.clone()));
         let logged_in = shared.logged_in.load(Ordering::Relaxed);
@@ -107,5 +123,44 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<InventoryCmd>) {
         };
         emitter.emit(Event::Helper(status.clone()));
         next_run = Instant::now() + api_helper_runner::next_delay(outcome, interval);
+    }
+}
+
+/// When to read after a change at `now`. The first change only ever brings the
+/// scheduled read forward; later ones push it to [`SETTLE`] after the latest,
+/// capped at [`MAX_DEFER`] after the first.
+fn after_change(now: Instant, changed_since: &mut Option<Instant>, next_run: Instant) -> Instant {
+    let pending = changed_since.is_some();
+    let first = *changed_since.get_or_insert(now);
+    let target = (now + SETTLE).min(first + MAX_DEFER);
+    if pending { target } else { next_run.min(target) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changes_collapse_into_one_read() {
+        let t0 = Instant::now();
+        let poll = t0 + Duration::from_secs(600);
+        let mut since = None;
+        // First change: read SETTLE later, well before the next poll.
+        let next = after_change(t0, &mut since, poll);
+        assert_eq!(next, t0 + SETTLE);
+        // A follow-up 5s later moves the read to SETTLE after it.
+        let t1 = t0 + Duration::from_secs(5);
+        assert_eq!(after_change(t1, &mut since, next), t1 + SETTLE);
+        // A stream of changes stops deferring at MAX_DEFER after the first.
+        let t2 = t0 + Duration::from_secs(85);
+        assert_eq!(after_change(t2, &mut since, t1 + SETTLE), t0 + MAX_DEFER);
+    }
+
+    #[test]
+    fn a_change_never_delays_an_earlier_read() {
+        let t0 = Instant::now();
+        let soon = t0 + Duration::from_secs(5);
+        let mut since = None;
+        assert_eq!(after_change(t0, &mut since, soon), soon);
     }
 }

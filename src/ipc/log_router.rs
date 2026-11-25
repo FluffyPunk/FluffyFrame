@@ -68,10 +68,19 @@ fn handle(shared: &Shared, emitter: &Emitter, inventory: &Sender<InventoryCmd>, 
                     notifications::send("Trade complete", &what);
                 }
                 emitter.emit(Event::Trade(TradeEvent { at, trade: trade.clone() }));
-                // Pick up the changed inventory on the next read.
-                let _ = inventory.send(InventoryCmd::LoginDetected);
+                let _ = inventory.send(InventoryCmd::GameChanged("trade"));
             }
         }
-        LogEvent::Attached(_) | LogEvent::MissionEnded => {}
+        // Things that change the inventory: re-read it (debounced by the worker).
+        LogEvent::MissionEnded => {
+            let _ = inventory.send(InventoryCmd::GameChanged("mission ended"));
+        }
+        LogEvent::InventorySynced => {
+            let _ = inventory.send(InventoryCmd::GameChanged("game synced inventory"));
+        }
+        LogEvent::PurchaseCompleted => {
+            let _ = inventory.send(InventoryCmd::GameChanged("purchase"));
+        }
+        LogEvent::Attached(_) => {}
     }
 }

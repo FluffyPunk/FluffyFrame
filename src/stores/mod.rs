@@ -164,7 +164,7 @@ impl AppState {
                 LogEvent::LoginComplete => self.logged_in = true,
                 LogEvent::GameStarted => self.logged_in = false,
                 LogEvent::Whisper(from) => self.push_history(format!("Whisper from {from}")),
-                LogEvent::MissionEnded | LogEvent::TradeCompleted(_) => {}
+                LogEvent::MissionEnded | LogEvent::TradeCompleted(_) | LogEvent::InventorySynced | LogEvent::PurchaseCompleted => {}
             },
             Event::Trade(t) => {
                 self.push_history(format!("Trade with {}: {}p", t.trade.partner, t.trade.platinum));

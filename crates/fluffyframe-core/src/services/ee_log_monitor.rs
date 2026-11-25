@@ -61,6 +61,11 @@ pub enum LogEvent {
     Whisper(String),
     TradeCompleted(LogTrade),
     MissionEnded,
+    /// The game reloaded the inventory from DE's servers (`OnInventoryResults`):
+    /// at login and after missions, the hub and other changes.
+    InventorySynced,
+    /// A market purchase went through (the purchase celebration screen).
+    PurchaseCompleted,
 }
 
 /// Strips platform glyphs (PUA code points, U+FFFD and trailing non-ASCII).
@@ -179,6 +184,12 @@ impl LineParser {
         }
         if line.contains("Sys [Info]: EOM missionLocationUnlocked=") || line.contains("TopMenu.lua: Abort:") {
             out.push(LogEvent::MissionEnded);
+        }
+        if line.contains("Sys [Info]: OnInventoryResults completed") {
+            out.push(LogEvent::InventorySynced);
+        }
+        if line.contains("Created /Lotus/Interface/PurchaseCelebration.swf") {
+            out.push(LogEvent::PurchaseCompleted);
         }
         if line.contains(TRADE_SUCCESS) {
             let lines = if self.dialog_open { Some(std::mem::take(&mut self.dialog)) } else { self.last_dialog.take() };
@@ -342,6 +353,21 @@ mod tests {
         assert_eq!(trade.platinum, 45);
         assert_eq!(trade.items.len(), 2);
         assert_eq!(trade.items[1].count, 2);
+    }
+
+    #[test]
+    fn inventory_change_events() {
+        let mut p = LineParser::default();
+        let mut ev = Vec::new();
+        for line in [
+            "25185.383 Sys [Info]: OnInventoryResults completed in 71ms",
+            "25200.508 Sys [Info]: Created /Lotus/Interface/PurchaseCelebration.swf",
+            "25213.996 Script [Info]: TopMenu.lua: Abort: in hub (1)",
+            "25216.617 Sys [Info]: SyncInventoryFromDB",
+        ] {
+            p.handle(line, &mut ev);
+        }
+        assert!(matches!(ev.as_slice(), [LogEvent::InventorySynced, LogEvent::PurchaseCompleted, LogEvent::MissionEnded]));
     }
 
     #[test]
