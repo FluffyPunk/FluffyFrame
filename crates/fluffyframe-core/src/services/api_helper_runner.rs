@@ -52,7 +52,7 @@ impl RunFailure {
             RunFailure::NotLoggedIn => "Warframe is at the login screen. Log in and the inventory will follow.",
             RunFailure::TokenNotFound => "Login token not found: restart Warframe and try again.",
             RunFailure::ReadDenied => {
-                "Reading game memory was denied. On Linux run `sudo setcap cap_sys_ptrace+ep <wfhelper binary>` \
+                "Reading game memory was denied. On Linux run `sudo setcap cap_sys_ptrace+ep <fluffyframe binary>` \
                  or `sudo sysctl kernel.yama.ptrace_scope=0`."
             }
             RunFailure::Network => "Could not reach DE's inventory API. It will retry.",

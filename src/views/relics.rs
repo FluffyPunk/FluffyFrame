@@ -3,8 +3,8 @@
 //! ranking is here.
 
 use egui::{Align, Color32, FontId, Layout, Margin, RichText, Sense, Stroke, Ui, vec2};
-use wfhelper_core::services::item_database::{Rarity, RelicEra, RelicInfo, Refinement};
-use wfhelper_core::services::relic_service::{self, RelicValue};
+use fluffyframe_core::services::item_database::{Rarity, RelicEra, RelicInfo, Refinement};
+use fluffyframe_core::services::relic_service::{self, RelicValue};
 
 use super::need_game_data;
 use crate::assets;
@@ -273,7 +273,7 @@ impl RelicsView {
     }
 
     /// Relic detail (original: `RelicDetailModal.svelte`).
-    fn detail(&mut self, ui: &mut Ui, state: &AppState, db: &wfhelper_core::services::item_database::ItemDb, intact: &std::collections::HashMap<&str, &RelicInfo>) {
+    fn detail(&mut self, ui: &mut Ui, state: &AppState, db: &fluffyframe_core::services::item_database::ItemDb, intact: &std::collections::HashMap<&str, &RelicInfo>) {
         let Some(family) = self.selected.clone() else { return };
         let Some(info) = intact.get(family.as_str()) else { return };
         let price_of = |u: &str| state.price_of_unique(u);

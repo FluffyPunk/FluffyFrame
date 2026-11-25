@@ -1,26 +1,40 @@
 //! Per-user data locations (original: `services/userDataPath.ts`).
 //!
-//! `WFHELPER_DATA_DIR` overrides the base directory, for tests and portable installs.
+//! `FLUFFYFRAME_DATA_DIR` overrides the base directory, for tests and portable installs.
+//! Data from before the rename (the `wfhelper-rust` folder) is moved over on first launch.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use super::app_meta::APP_ID;
+use super::app_meta::{self, APP_ID, APP_NAME};
 
 static BASE: OnceLock<PathBuf> = OnceLock::new();
 
 pub fn data_dir() -> &'static PathBuf {
     BASE.get_or_init(|| {
-        let dir = std::env::var_os("WFHELPER_DATA_DIR")
+        let dir = app_meta::env_var("DATA_DIR")
             .map(PathBuf::from)
-            .or_else(|| {
-                directories::ProjectDirs::from("com", "WFHelper", APP_ID)
-                    .map(|d| d.data_dir().to_path_buf())
-            })
-            .unwrap_or_else(|| PathBuf::from(".wfhelper"));
+            .or_else(platform_dir)
+            .unwrap_or_else(|| PathBuf::from(".fluffyframe"));
         let _ = std::fs::create_dir_all(&dir);
         dir
     })
+}
+
+/// The platform data folder, taking over the pre-rename one when it is the only
+/// one there. If the move fails, the old folder stays in use, so nothing is lost.
+fn platform_dir() -> Option<PathBuf> {
+    let new = directories::ProjectDirs::from("com", APP_NAME, APP_ID)?.data_dir().to_path_buf();
+    let old = directories::ProjectDirs::from("com", "WFHelper", "wfhelper-rust").map(|d| d.data_dir().to_path_buf());
+    match old {
+        Some(old) if !new.exists() && old.is_dir() => {
+            if let Some(parent) = new.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            Some(if std::fs::rename(&old, &new).is_ok() { new } else { old })
+        }
+        _ => Some(new),
+    }
 }
 
 /// A file directly under the data directory.
@@ -53,5 +67,5 @@ pub fn wfm_session_file() -> PathBuf {
     user_file("wfm-session.json")
 }
 pub fn log_file() -> PathBuf {
-    user_file("wfhelper.log")
+    user_file("fluffyframe.log")
 }

@@ -1409,6 +1409,45 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 
 [[package]]
+name = "fluffyframe"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crossbeam-channel",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "fluffyframe-core",
+ "image",
+ "log",
+ "rfd",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "fluffyframe-core"
+version = "0.1.2"
+dependencies = [
+ "aes",
+ "anyhow",
+ "cbc",
+ "chrono",
+ "crossbeam-channel",
+ "directories",
+ "log",
+ "lzma-rs",
+ "notify-rust",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "wf-api",
+]
+
+[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5011,45 +5050,6 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "wfhelper-core"
-version = "0.1.0"
-dependencies = [
- "aes",
- "anyhow",
- "cbc",
- "chrono",
- "crossbeam-channel",
- "directories",
- "log",
- "lzma-rs",
- "notify-rust",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "tempfile",
- "wf-api",
-]
-
-[[package]]
-name = "wfhelper-rust"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "crossbeam-channel",
- "eframe",
- "egui",
- "egui_extras",
- "image",
- "log",
- "rfd",
- "serde",
- "serde_json",
- "wfhelper-core",
 ]
 
 [[package]]

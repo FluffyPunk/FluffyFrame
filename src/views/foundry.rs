@@ -2,9 +2,9 @@
 
 use chrono::Utc;
 use egui::{Align, Layout, Margin, RichText, Ui, vec2};
-use wfhelper_core::services::foundry::{self, FoundryRow};
-use wfhelper_core::services::inventory::level_from_xp;
-use wfhelper_core::services::item_database::ItemKind;
+use fluffyframe_core::services::foundry::{self, FoundryRow};
+use fluffyframe_core::services::inventory::level_from_xp;
+use fluffyframe_core::services::item_database::ItemKind;
 
 use super::need_inventory;
 use crate::components::{format, ui as kit};

@@ -1,8 +1,8 @@
 //! Market (original: `src/views/MarketView.svelte`, `src/components/market/*`).
 
 use egui::{Align, FontId, Layout, Margin, RichText, Stroke, Ui, vec2};
-use wfhelper_core::services::wfm_orders::OrderType;
-use wfhelper_core::services::wfm_stats_price::price_key;
+use fluffyframe_core::services::wfm_orders::OrderType;
+use fluffyframe_core::services::wfm_stats_price::price_key;
 
 use crate::components::{ui as kit, widgets};
 use crate::ipc::{Backend, MarketCmd, PriceCmd};

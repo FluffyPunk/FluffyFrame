@@ -11,6 +11,11 @@ use super::riven_data::{RivenTables, slug};
 use super::{http, json_cache};
 
 const SHEET_ID: &str = "1LJ83e4x_xIVgjZg049PKrDgTex2MIuaiX0FFZi9mH-Q";
+/// The community riven good-rolls spreadsheet.
+pub fn sheet_url() -> String {
+    format!("https://docs.google.com/spreadsheets/d/{SHEET_ID}")
+}
+
 const MAX_AGE: Duration = Duration::from_secs(7 * 24 * 3600);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,7 +241,7 @@ impl GoodRolls {
     pub fn load() -> crate::Result<Self> {
         let mut by_name = HashMap::new();
         for (gid, class) in TABS {
-            let url = format!("https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}");
+            let url = format!("{}/export?format=csv&gid={gid}", sheet_url());
             let csv = json_cache::fetch_cached(&format!("riven-good-rolls-{gid}.csv"), MAX_AGE, || http::get_text(&url))?;
             for (name, data) in parse_sheet(&csv, class)? {
                 by_name.entry(name).or_insert(data);

@@ -6,8 +6,8 @@
 
 use chrono::{DateTime, Utc};
 use egui::{Align, FontId, Layout, Margin, RichText, Stroke, Ui, vec2};
-use wfhelper_core::config::settings::Settings;
-use wfhelper_core::services::world_state::{self, WorldState};
+use fluffyframe_core::config::settings::Settings;
+use fluffyframe_core::services::world_state::{self, WorldState};
 
 use crate::components::{format, ui as kit};
 use crate::ipc::Backend;
@@ -280,7 +280,7 @@ impl DailiesView {
                 if let Some(nw) = &ws.nightwave {
                     let ui = &mut cols[0];
                     let acts: Vec<_> = nw.challenges.iter().filter(|c| q.is_empty() || c.title.to_lowercase().contains(&q)).collect();
-                    let id_of = |c: &wfhelper_core::services::world_state::NightwaveChallenge| format!("nw:{}", c.title);
+                    let id_of = |c: &fluffyframe_core::services::world_state::NightwaveChallenge| format!("nw:{}", c.title);
                     let done = acts.iter().filter(|c| progress(&s, &id_of(c), c.expiry) >= 1).count();
                     let header = format!("Season {} ends in {}", nw.season, format::until(nw.expiry));
                     group_card(ui, "Nightwave", done, acts.len(), None, |ui| {

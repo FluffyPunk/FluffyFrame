@@ -76,7 +76,7 @@ impl fmt::Display for ApiError {
                 write!(
                     f,
                     ". On Linux this is usually Yama ptrace_scope: run \
-                     `sudo setcap cap_sys_ptrace+ep <path to wfhelper>` or \
+                     `sudo setcap cap_sys_ptrace+ep <path to fluffyframe>` or \
                      `sudo sysctl kernel.yama.ptrace_scope=0`"
                 )?;
                 Ok(())

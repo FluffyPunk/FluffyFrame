@@ -1,5 +1,5 @@
 //! `http(s)://` bytes loader for item art, backed by the on-disk
-//! [`image_cache`](wfhelper_core::services::image_cache).
+//! [`image_cache`](fluffyframe_core::services::image_cache).
 //!
 //! Replaces egui_extras' `http` loader, which kept images only in memory (so
 //! every launch re-downloaded everything) and spawned a thread per request.
@@ -15,7 +15,7 @@ use std::task::Poll;
 
 use egui::load::{Bytes, BytesLoadResult, BytesLoader, BytesPoll, LoadError};
 use egui::mutex::Mutex;
-use wfhelper_core::services::image_cache;
+use fluffyframe_core::services::image_cache;
 
 const DOWNLOAD_WORKERS: usize = 8;
 

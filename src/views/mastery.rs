@@ -2,8 +2,8 @@
 //! `src/lib/mastery*.ts`).
 
 use egui::{Align, FontId, Layout, Margin, RichText, Ui, vec2};
-use wfhelper_core::services::item_database::ItemKind;
-use wfhelper_core::services::mastery_helper::{self, MasteryRow, points_per_rank};
+use fluffyframe_core::services::item_database::ItemKind;
+use fluffyframe_core::services::mastery_helper::{self, MasteryRow, points_per_rank};
 
 use super::need_inventory;
 use crate::assets;
@@ -123,7 +123,7 @@ impl MasteryView {
         }
     }
 
-    fn collection(&mut self, ui: &mut Ui, rows: &[MasteryRow], db: &wfhelper_core::services::item_database::ItemDb, open: &mut Option<String>) {
+    fn collection(&mut self, ui: &mut Ui, rows: &[MasteryRow], db: &fluffyframe_core::services::item_database::ItemDb, open: &mut Option<String>) {
         egui::CollapsingHeader::new(RichText::new("Detailed breakdown").font(FontId::new(15.0, theme::display_bold())))
             .default_open(true)
             .show(ui, |ui| {

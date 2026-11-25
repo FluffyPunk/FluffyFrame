@@ -2,8 +2,8 @@
 //! `DropsList.svelte`, `CraftingTree.svelte`).
 
 use egui::{Align, FontId, Layout, Margin, RichText, Stroke, Ui, vec2};
-use wfhelper_core::services::inventory::{ARCHON_SHARD_SLOTS, ArchonShard};
-use wfhelper_core::services::item_database::{ItemDb, ItemKind};
+use fluffyframe_core::services::inventory::{ARCHON_SHARD_SLOTS, ArchonShard};
+use fluffyframe_core::services::item_database::{ItemDb, ItemKind};
 
 use crate::components::{archon, format, ui as kit, widgets};
 use crate::ipc::Backend;

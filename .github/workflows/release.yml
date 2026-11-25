@@ -22,12 +22,12 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            bin: wfhelper
-            asset: wfhelper-rust-linux
+            bin: fluffyframe
+            asset: fluffyframe-linux
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            bin: wfhelper.exe
-            asset: wfhelper-rust-win.exe
+            bin: fluffyframe.exe
+            asset: fluffyframe.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

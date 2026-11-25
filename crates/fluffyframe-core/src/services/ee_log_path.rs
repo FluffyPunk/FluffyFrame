@@ -1,5 +1,5 @@
 //! Locate EE.log on Windows, Steam Proton, or another launcher's Wine prefix
-//! (original: `services/eeLogPath.ts`). `WFHELPER_EE_LOG` overrides discovery.
+//! (original: `services/eeLogPath.ts`). `FLUFFYFRAME_EE_LOG` overrides discovery.
 
 use std::path::{Path, PathBuf};
 
@@ -43,7 +43,7 @@ fn subdirs(dir: &Path) -> Vec<PathBuf> {
 /// All candidate EE.log locations, most likely first.
 pub fn candidates() -> Vec<PathBuf> {
     let mut out = Vec::new();
-    if let Some(p) = std::env::var_os("WFHELPER_EE_LOG") {
+    if let Some(p) = crate::config::app_meta::env_var("EE_LOG") {
         out.push(PathBuf::from(p));
     }
     if cfg!(windows) {

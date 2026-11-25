@@ -1,6 +1,7 @@
 //! App shell (original: `src/App.svelte`, `src/components/layout/*`).
 
 use eframe::Frame;
+use fluffyframe_core::config::app_meta;
 use egui::{Margin, Ui};
 
 use crate::components::{sidebar, status_bar, toasts};
@@ -9,7 +10,7 @@ use crate::stores::{self, AppState};
 use crate::theme;
 use crate::views::{ViewName, Views};
 
-pub struct WfHelperApp {
+pub struct FluffyFrameApp {
     backend: Backend,
     state: AppState,
     views: Views,
@@ -18,16 +19,16 @@ pub struct WfHelperApp {
     item_modal: crate::components::item_modal::ItemModal,
 }
 
-impl WfHelperApp {
+impl FluffyFrameApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         egui_extras::install_image_loaders(&cc.egui_ctx);
         crate::image_loader::install(&cc.egui_ctx);
         crate::image_loader::install_thumbnails(&cc.egui_ctx);
         theme::install(&cc.egui_ctx);
-        let settings = wfhelper_core::config::settings::Settings::load();
+        let settings = fluffyframe_core::config::settings::Settings::load();
         crate::stores::apply_theme(&cc.egui_ctx, &settings);
-        // WFHELPER_VIEW opens a specific view (handy for screenshots and debugging).
-        let forced = std::env::var("WFHELPER_VIEW").ok().and_then(|v| ViewName::from_id(&v));
+        // FLUFFYFRAME_VIEW opens a specific view (handy for screenshots and debugging).
+        let forced = app_meta::env_var("VIEW").and_then(|v| ViewName::from_id(&v.to_string_lossy()));
         let current = if let Some(v) = forced.filter(|_| settings.setup_complete) {
             v
         } else if settings.setup_complete {
@@ -40,7 +41,7 @@ impl WfHelperApp {
     }
 }
 
-impl eframe::App for WfHelperApp {
+impl eframe::App for FluffyFrameApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         crate::image_loader::release_evicted(ctx);
         while let Ok(event) = self.backend.events.try_recv() {
@@ -57,9 +58,11 @@ impl eframe::App for WfHelperApp {
             self.current = ViewName::Setup;
         }
 
+        status_bar::resize_edges(ui.ctx());
         let strip = egui::Frame::new().fill(theme::BG_DEEP()).inner_margin(Margin::symmetric(8, 4));
-        egui::Panel::top("title").exact_size(30.0).frame(strip).show(ui, |ui| {
-            status_bar::title_strip(ui, &self.state);
+        // Edge to edge so the window buttons sit in the corner.
+        egui::Panel::top("title").exact_size(32.0).frame(egui::Frame::new().fill(theme::BG_DEEP())).show(ui, |ui| {
+            status_bar::title_strip(ui);
         });
         egui::Panel::bottom("status").exact_size(26.0).frame(strip).show(ui, |ui| {
             status_bar::show(ui, &self.state, &self.backend);

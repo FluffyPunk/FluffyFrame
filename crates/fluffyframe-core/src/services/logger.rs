@@ -18,7 +18,7 @@ struct Logger {
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= self.level
-            && (metadata.target().starts_with("wf") || metadata.level() <= Level::Warn)
+            && ((metadata.target().starts_with("fluffyframe") || metadata.target().starts_with("wf_api")) || metadata.level() <= Level::Warn)
     }
 
     fn log(&self, record: &Record) {
@@ -62,7 +62,7 @@ pub fn init() {
         let _ = std::fs::rename(&path, path.with_extension("log.old"));
     }
     let file = std::fs::OpenOptions::new().create(true).append(true).open(&path).ok();
-    let level = if std::env::var_os("WFHELPER_DEBUG").is_some() {
+    let level = if crate::config::app_meta::env_var("DEBUG").is_some() {
         LevelFilter::Debug
     } else {
         LevelFilter::Info

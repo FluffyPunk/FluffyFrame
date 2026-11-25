@@ -3,8 +3,8 @@
 //! auctions by how many of them each listing has.
 
 use egui::{Align, Color32, FontId, Layout, Margin, RichText, Stroke, Ui, vec2};
-use wfhelper_core::config::game_tables;
-use wfhelper_core::services::wfm_riven_search::{self as wfm, RivenAuction};
+use fluffyframe_core::config::game_tables;
+use fluffyframe_core::services::wfm_riven_search::{self as wfm, RivenAuction};
 
 use crate::components::{format, ui as kit};
 use crate::ipc::{Backend, MarketCmd};

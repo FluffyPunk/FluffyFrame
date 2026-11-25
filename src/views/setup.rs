@@ -2,7 +2,7 @@
 //! The overlay placement step is gone with the overlays.
 
 use egui::{FontId, RichText, Ui};
-use wfhelper_core::config::settings::InventorySource;
+use fluffyframe_core::config::settings::InventorySource;
 
 use super::ViewName;
 use crate::assets;
@@ -23,7 +23,7 @@ impl SetupView {
         ui.vertical_centered(|ui| {
             ui.add_space(40.0);
             kit::icon(ui, assets::LOGO, 56.0);
-            ui.label(RichText::new("Welcome to WFHelper").font(FontId::new(34.0, theme::display_bold())).color(TEXT()));
+            ui.label(RichText::new("Welcome to FluffyFrame").font(FontId::new(34.0, theme::display_bold())).color(TEXT()));
             ui.label(RichText::new("Unofficial Warframe companion: inventory, prices, relics, world state.").color(TEXT_SECONDARY()));
             ui.add_space(20.0);
             ui.set_max_width(780.0);
@@ -52,7 +52,7 @@ impl SetupView {
                         ui.radio_value(&mut s.inventory_source, InventorySource::Game, "Read from the running game");
                         ui.label(RichText::new("Built in, nothing to install. Start Warframe and log in; refreshes every 10 minutes.").size(12.0).color(TEXT_MUTED()));
                         #[cfg(target_os = "linux")]
-                        ui.label(RichText::new("Linux blocks reading another process's memory by default: `sudo setcap cap_sys_ptrace+ep <path to wfhelper>`.").size(12.0).color(TEXT_MUTED()));
+                        ui.label(RichText::new("Linux blocks reading another process's memory by default: `sudo setcap cap_sys_ptrace+ep <path to fluffyframe>`.").size(12.0).color(TEXT_MUTED()));
                         ui.add_space(6.0);
                         if kit::ghost_button(ui, "Import inventory JSON or AlecaFrame lastData.dat…").clicked()
                             && let Some(path) = rfd::FileDialog::new().add_filter("Inventory", &["json", "dat", "txt"]).pick_file()

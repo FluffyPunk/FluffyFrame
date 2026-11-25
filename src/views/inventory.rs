@@ -4,13 +4,13 @@
 use std::collections::HashSet;
 
 use egui::{Align, FontId, Layout, Margin, RichText, Sense, Stroke, Ui, pos2, vec2};
-use wfhelper_core::config::settings::ValueScope;
-use wfhelper_core::services::full_sets;
-use wfhelper_core::services::inventory::{InventoryGroup, InventoryRow};
-use wfhelper_core::services::item_database::ItemKind;
-use wfhelper_core::services::wfm_catalog::Catalog;
-use wfhelper_core::services::wfm_orders::{NewOrder, OrderType};
-use wfhelper_core::services::wfm_stats_price::{Variant, price_key};
+use fluffyframe_core::config::settings::ValueScope;
+use fluffyframe_core::services::full_sets;
+use fluffyframe_core::services::inventory::{InventoryGroup, InventoryRow};
+use fluffyframe_core::services::item_database::ItemKind;
+use fluffyframe_core::services::wfm_catalog::Catalog;
+use fluffyframe_core::services::wfm_orders::{NewOrder, OrderType};
+use fluffyframe_core::services::wfm_stats_price::{Variant, price_key};
 
 use super::need_inventory;
 use crate::components::{archon, format, ui as kit};
@@ -125,7 +125,7 @@ impl Default for InventoryView {
 
 /// A full set as a market-panel row. Its count is what can be sold as a set:
 /// built weapons are account-bound and do not count.
-fn set_row(set: &full_sets::FullSet, db: &wfhelper_core::services::item_database::ItemDb) -> InventoryRow {
+fn set_row(set: &full_sets::FullSet, db: &fluffyframe_core::services::item_database::ItemDb) -> InventoryRow {
     InventoryRow {
         unique_name: set.result.clone(),
         name: set.name.clone(),
@@ -753,7 +753,7 @@ impl InventoryView {
                 return;
             };
             let book = state.top_orders.get(&price_key(&slug, variant)).cloned();
-            let online = |o: &&wfhelper_core::services::wfm_orders::Order| !self.online_only || o.user_status.as_deref().is_some_and(|s| s != "offline");
+            let online = |o: &&fluffyframe_core::services::wfm_orders::Order| !self.online_only || o.user_status.as_deref().is_some_and(|s| s != "offline");
             let mut sells: Vec<_> = book.as_ref().map(|b| b.sell.iter().filter(online).cloned().collect()).unwrap_or_default();
             let mut buys: Vec<_> = book.as_ref().map(|b| b.buy.iter().filter(online).cloned().collect()).unwrap_or_default();
             if self.sort_by_reputation.0 {

@@ -5,21 +5,21 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use wfhelper_core::config::settings::Settings;
-use wfhelper_core::services::api_helper_runner::HelperStatus;
-use wfhelper_core::services::arbi_schedule::ArbiSchedule;
-use wfhelper_core::services::drop_data::DropIndex;
-use wfhelper_core::services::ee_log_monitor::LogEvent;
-use wfhelper_core::services::inventory::{self, Inventory, InventoryGroup, InventoryRow, relic_refinement};
-use wfhelper_core::services::item_database::ItemDb;
-use wfhelper_core::services::stats_tracker::StatsHistory;
-use wfhelper_core::services::trade_tracker::TradeLog;
-use wfhelper_core::services::wfm_catalog::Catalog;
-use wfhelper_core::services::wfm_client::Session;
-use wfhelper_core::services::wfm_orders::{Order, TopOrders};
-use wfhelper_core::services::wfm_riven_search::{RivenAuction, RivenWeapons};
-use wfhelper_core::services::wfm_stats_price::{Price, Variant, price_key};
-use wfhelper_core::services::world_state::WorldState;
+use fluffyframe_core::config::settings::Settings;
+use fluffyframe_core::services::api_helper_runner::HelperStatus;
+use fluffyframe_core::services::arbi_schedule::ArbiSchedule;
+use fluffyframe_core::services::drop_data::DropIndex;
+use fluffyframe_core::services::ee_log_monitor::LogEvent;
+use fluffyframe_core::services::inventory::{self, Inventory, InventoryGroup, InventoryRow, relic_refinement};
+use fluffyframe_core::services::item_database::ItemDb;
+use fluffyframe_core::services::stats_tracker::StatsHistory;
+use fluffyframe_core::services::trade_tracker::TradeLog;
+use fluffyframe_core::services::wfm_catalog::Catalog;
+use fluffyframe_core::services::wfm_client::Session;
+use fluffyframe_core::services::wfm_orders::{Order, TopOrders};
+use fluffyframe_core::services::wfm_riven_search::{RivenAuction, RivenWeapons};
+use fluffyframe_core::services::wfm_stats_price::{Price, Variant, price_key};
+use fluffyframe_core::services::world_state::WorldState;
 
 use crate::ipc::{Backend, Event, PriceCmd, ToastKind};
 
@@ -60,7 +60,7 @@ pub struct AppState {
     pub top_orders: HashMap<String, TopOrders>,
     pub riven_weapons: Option<Arc<RivenWeapons>>,
     pub riven_weapons_requested: bool,
-    pub good_rolls: Option<Arc<wfhelper_core::services::riven_good_rolls::GoodRolls>>,
+    pub good_rolls: Option<Arc<fluffyframe_core::services::riven_good_rolls::GoodRolls>>,
     pub riven_auctions: HashMap<String, Vec<RivenAuction>>,
     pub loading: Option<String>,
     pub toasts: Vec<Toast>,
@@ -179,7 +179,7 @@ impl AppState {
         let vaulted = db
             .relics
             .values()
-            .filter(|r| r.refinement == wfhelper_core::services::item_database::Refinement::Intact)
+            .filter(|r| r.refinement == fluffyframe_core::services::item_database::Refinement::Intact)
             .filter(|r| drops.lookup(&format!("{} Relic", r.name)).is_empty())
             .map(|r| r.family.clone())
             .collect();
@@ -210,7 +210,7 @@ impl AppState {
         // A relic is vaulted when no mission drops it; a part when all its relics are.
         if let Some(vaulted) = &self.vaulted_relics {
             let mut sources: HashMap<&str, Vec<&str>> = HashMap::new();
-            for r in db.relics.values().filter(|r| r.refinement == wfhelper_core::services::item_database::Refinement::Intact) {
+            for r in db.relics.values().filter(|r| r.refinement == fluffyframe_core::services::item_database::Refinement::Intact) {
                 for w in &r.rewards {
                     sources.entry(w.unique_name.as_str()).or_default().push(r.family.as_str());
                 }

@@ -8,9 +8,9 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use crossbeam_channel::{Receiver, RecvTimeoutError};
-use wfhelper_core::config::settings::InventorySource;
-use wfhelper_core::services::api_helper_runner::{self, HelperStatus};
-use wfhelper_core::services::inventory_import;
+use fluffyframe_core::config::settings::InventorySource;
+use fluffyframe_core::services::api_helper_runner::{self, HelperStatus};
+use fluffyframe_core::services::inventory_import;
 
 use super::{Emitter, Event, Shared, ToastKind};
 

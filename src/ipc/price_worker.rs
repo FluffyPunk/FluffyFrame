@@ -7,8 +7,8 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, TryRecvError};
-use wfhelper_core::services::wfm_stats_price::{self, price_key};
-use wfhelper_core::services::wfm_stats_price::Variant;
+use fluffyframe_core::services::wfm_stats_price::{self, price_key};
+use fluffyframe_core::services::wfm_stats_price::Variant;
 
 use super::{Emitter, Event, Shared};
 

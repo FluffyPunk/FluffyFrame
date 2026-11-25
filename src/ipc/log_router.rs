@@ -6,9 +6,9 @@ use std::sync::atomic::Ordering;
 
 use chrono::Utc;
 use crossbeam_channel::{Receiver, Sender, select, unbounded};
-use wfhelper_core::services::ee_log_monitor::{self, LogEvent, TradeKind};
-use wfhelper_core::services::notifications;
-use wfhelper_core::services::trade_tracker::{TradeEvent, TradeLog};
+use fluffyframe_core::services::ee_log_monitor::{self, LogEvent, TradeKind};
+use fluffyframe_core::services::notifications;
+use fluffyframe_core::services::trade_tracker::{TradeEvent, TradeLog};
 
 use super::{Emitter, Event, InventoryCmd, Shared};
 

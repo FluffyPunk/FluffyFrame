@@ -1,9 +1,9 @@
 [package]
-name = "wfhelper-core"
-version = "0.1.0"
+name = "fluffyframe-core"
+version.workspace = true
 edition = "2024"
 license = "MIT"
-description = "WFHelper services: game data, inventory, warframe.market, world state, EE.log."
+description = "FluffyFrame services: game data, inventory, warframe.market, world state, EE.log."
 
 [dependencies]
 wf-api.workspace = true

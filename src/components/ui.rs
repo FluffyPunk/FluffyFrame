@@ -51,7 +51,7 @@ pub fn tabs<T: PartialEq + Copy>(ui: &mut Ui, current: &mut T, items: &[(T, Stri
         for (value, label) in items {
             let selected = *current == *value;
             let color = if selected { TEXT() } else { TEXT_SECONDARY() };
-            let galley = ui.painter().layout_no_wrap(label.clone(), FontId::new(16.0, theme::display()), color);
+            let galley = ui.painter().layout_no_wrap(label.clone(), FontId::new(15.0, theme::display_light()), color);
             let size = vec2(galley.size().x + 28.0, 34.0);
             let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
             let color = if resp.hovered() && !selected { TEXT() } else { color };

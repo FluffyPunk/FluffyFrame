@@ -1,8 +1,8 @@
 //! Syndicates (original: `src/views/SyndicatesView.svelte`, `src/lib/syndicates/*`).
 
 use egui::{Align, Layout, RichText, Ui};
-use wfhelper_core::config::game_tables;
-use wfhelper_core::services::inventory::Affiliation;
+use fluffyframe_core::config::game_tables;
+use fluffyframe_core::services::inventory::Affiliation;
 
 use super::need_inventory;
 use crate::components::{format, ui as kit, widgets};

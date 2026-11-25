@@ -2,8 +2,9 @@
 //! Overlay, OCR and hotkey settings are gone along with those features.
 
 use egui::{Align, FontId, Layout, RichText, Ui};
-use wfhelper_core::config::paths;
-use wfhelper_core::config::settings::{InventorySource, Settings, ValueScope};
+use fluffyframe_core::config::{app_meta, constants, paths};
+use fluffyframe_core::services::riven_good_rolls;
+use fluffyframe_core::config::settings::{InventorySource, Settings, ValueScope};
 
 use super::ViewName;
 use crate::components::ui as kit;
@@ -28,14 +29,50 @@ pub struct SettingsView {
     fissure_mission: String,
 }
 
-fn panel(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
-    kit::card(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.label(RichText::new(title).font(FontId::new(17.0, theme::display_bold())));
-        ui.add_space(6.0);
-        add(ui);
-    });
-    ui.add_space(12.0);
+/// Page width cap (original: `max-w-[1320px]`, centered).
+const MAX_WIDTH: f32 = 1320.0;
+/// Panel layout (original `.settings-masonry`: `columns: 3 320px; column-gap: .85rem`).
+const MAX_COLUMNS: usize = 3;
+const MIN_COLUMN_WIDTH: f32 = 320.0;
+const GAP: f32 = 13.0;
+
+/// `add` in a column at most [`MAX_WIDTH`] wide, centered in the available width.
+fn centered<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let avail = ui.available_rect_before_wrap();
+    let w = avail.width().min(MAX_WIDTH);
+    let rect = egui::Rect::from_min_size(egui::pos2(avail.center().x - w / 2.0, avail.top()), egui::vec2(w, avail.height()));
+    let inner = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), add);
+    // Claim the full width so a surrounding scroll area keeps its scrollbar at
+    // the window edge.
+    ui.expand_to_include_rect(egui::Rect::from_min_max(avail.left_top(), egui::pos2(avail.right(), inner.response.rect.bottom())));
+    inner.inner
+}
+
+/// As many columns as fit at [`MIN_COLUMN_WIDTH`] (1 to [`MAX_COLUMNS`]); each
+/// panel goes into the currently shortest column, so the columns stay balanced.
+struct Masonry<'a> {
+    cols: &'a mut [Ui],
+}
+
+impl Masonry<'_> {
+    fn count(width: f32) -> usize {
+        (((width + GAP) / (MIN_COLUMN_WIDTH + GAP)).floor() as usize).clamp(1, MAX_COLUMNS)
+    }
+
+    fn panel(&mut self, title: &str, add: impl FnOnce(&mut Ui)) {
+        let ui = self.cols.iter_mut().min_by(|a, b| a.cursor().top().total_cmp(&b.cursor().top())).expect("at least one column");
+        kit::card(ui, |ui| {
+            ui.set_width(ui.available_width());
+            // Columns are justified; panel contents are not (wrapped labels
+            // would be stretched to the full width, buttons too).
+            ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                ui.label(RichText::new(title).font(FontId::new(17.0, theme::display_bold())));
+                ui.add_space(6.0);
+                add(ui);
+            });
+        });
+        ui.add_space(GAP);
+    }
 }
 
 /// Label on the left, control on the right.
@@ -58,35 +95,43 @@ impl SettingsView {
         let mut s = stores::settings(backend);
         let before = s.clone();
 
-        ui.horizontal(|ui| {
-            kit::page_title(ui, "Settings", None);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new("Changes apply automatically.").size(12.0).color(TEXT_MUTED()));
+        centered(ui, |ui| {
+            ui.horizontal(|ui| {
+                kit::page_title(ui, "Settings", None);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(RichText::new("Changes apply automatically.").size(12.0).color(TEXT_MUTED()));
+                });
             });
+            kit::tabs(
+                ui,
+                &mut self.tab,
+                &[
+                    (Tab::General, "General".into()),
+                    (Tab::Notifications, "Notifications".into()),
+                    (Tab::Inventory, "Inventory & Mastery".into()),
+                    (Tab::Appearance, "Appearance".into()),
+                    (Tab::About, "About".into()),
+                ],
+            );
         });
-        kit::tabs(
-            ui,
-            &mut self.tab,
-            &[
-                (Tab::General, "General".into()),
-                (Tab::Notifications, "Notifications".into()),
-                (Tab::Inventory, "Inventory & Mastery".into()),
-                (Tab::Appearance, "Appearance".into()),
-                (Tab::About, "About".into()),
-            ],
-        );
 
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-            ui.columns(3, |cols| match self.tab {
-                Tab::General => self.general(cols, state, backend, &mut s),
-                Tab::Notifications => self.notifications(cols, &mut s),
-                Tab::Inventory => self.inventory(cols, state, backend, &mut s),
-                Tab::Appearance => self.appearance(cols, &mut s),
-                Tab::About => self.about(cols),
+            centered(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = GAP;
+                ui.columns(Masonry::count(ui.available_width()), |cols| {
+                    let m = &mut Masonry { cols };
+                    match self.tab {
+                        Tab::General => self.general(m, state, backend, &mut s),
+                        Tab::Notifications => self.notifications(m, &mut s),
+                        Tab::Inventory => self.inventory(m, state, backend, &mut s),
+                        Tab::Appearance => self.appearance(m, &mut s),
+                        Tab::About => self.about(m),
+                    }
+                });
             });
         });
 
-        if s.ui_scale != before.ui_scale || s.theme_preset != before.theme_preset || s.corner_style != before.corner_style {
+        if s.theme_preset != before.theme_preset || s.corner_style != before.corner_style {
             stores::apply_theme(ui.ctx(), &s);
         }
         let source_changed = s.inventory_source != before.inventory_source;
@@ -102,8 +147,8 @@ impl SettingsView {
         }
     }
 
-    fn general(&mut self, cols: &mut [Ui], state: &AppState, backend: &Backend, s: &mut Settings) {
-        panel(&mut cols[0], "Game log", |ui| {
+    fn general(&mut self, m: &mut Masonry, state: &AppState, backend: &Backend, s: &mut Settings) {
+        m.panel("Game log", |ui| {
             match &state.ee_log {
                 Some(p) => {
                     kit::caption(ui, "Following");
@@ -130,7 +175,7 @@ impl SettingsView {
             #[cfg(target_os = "linux")]
             ui.label(RichText::new("On Steam, `PROTON_LOG=1 %command%` in Warframe's launch options makes events arrive sooner.").size(11.5).color(TEXT_MUTED()));
         });
-        panel(&mut cols[1], "Data", |ui| {
+        m.panel("Data", |ui| {
             ui.label(RichText::new(paths::data_dir().display().to_string()).size(12.0).color(TEXT_SECONDARY()));
             ui.horizontal(|ui| {
                 if kit::ghost_button(ui, "Open data folder").clicked() {
@@ -145,7 +190,7 @@ impl SettingsView {
                 s.setup_complete = false;
             }
         });
-        panel(&mut cols[2], "Startup", |ui| {
+        m.panel("Startup", |ui| {
             row(ui, "Open on", |ui| {
                 egui::ComboBox::from_id_salt("landing")
                     .width(140.0)
@@ -159,14 +204,14 @@ impl SettingsView {
         });
     }
 
-    fn notifications(&mut self, cols: &mut [Ui], s: &mut Settings) {
-        panel(&mut cols[0], "Desktop notifications", |ui| {
+    fn notifications(&mut self, m: &mut Masonry, s: &mut Settings) {
+        m.panel("Desktop notifications", |ui| {
             toggle(ui, "In-game whispers", &mut s.notify_whispers);
             toggle(ui, "Completed trades", &mut s.notify_trades);
             toggle(ui, "Favorite arbitrations", &mut s.notify_arbitrations);
             ui.label(RichText::new("Pick favorite nodes in World › Arbitrations.").size(11.5).color(TEXT_MUTED()));
         });
-        panel(&mut cols[1], "Void fissure alerts", |ui| {
+        m.panel("Void fissure alerts", |ui| {
             toggle(ui, "Notify for matching fissures", &mut s.notify_fissures);
             toggle(ui, "Steel Path only", &mut s.fissure_alert_steel_path);
             ui.horizontal_wrapped(|ui| {
@@ -190,8 +235,8 @@ impl SettingsView {
         });
     }
 
-    fn inventory(&mut self, cols: &mut [Ui], state: &AppState, backend: &Backend, s: &mut Settings) {
-        panel(&mut cols[0], "Inventory source", |ui| {
+    fn inventory(&mut self, m: &mut Masonry, state: &AppState, backend: &Backend, s: &mut Settings) {
+        m.panel("Inventory source", |ui| {
             for source in [InventorySource::Game, InventorySource::ImportedJson, InventorySource::AlecaFrame, InventorySource::None] {
                 ui.radio_value(&mut s.inventory_source, source, source.label());
             }
@@ -207,10 +252,10 @@ impl SettingsView {
                     ui.label(RichText::new(f.hint()).size(12.0).color(WARNING()));
                 }
                 #[cfg(target_os = "linux")]
-                ui.label(RichText::new("Reading game memory needs ptrace access: `sudo setcap cap_sys_ptrace+ep <path to wfhelper>`.").size(11.5).color(TEXT_MUTED()));
+                ui.label(RichText::new("Reading game memory needs ptrace access: `sudo setcap cap_sys_ptrace+ep <path to fluffyframe>`.").size(11.5).color(TEXT_MUTED()));
             }
         });
-        panel(&mut cols[1], "Import & export", |ui| {
+        m.panel("Import & export", |ui| {
             if kit::ghost_button(ui, "Import inventory JSON / AlecaFrame cache…").clicked()
                 && let Some(path) = rfd::FileDialog::new().add_filter("Inventory", &["json", "dat", "txt"]).pick_file()
             {
@@ -225,7 +270,7 @@ impl SettingsView {
             }
             ui.label(RichText::new("Export writes indented JSON instead of the single long line DE sends.").size(11.5).color(TEXT_MUTED()));
         });
-        panel(&mut cols[2], "Value estimate", |ui| {
+        m.panel("Value estimate", |ui| {
             ui.radio_value(&mut s.value_scope, ValueScope::PrimePartsOnly, "Prime parts only");
             ui.radio_value(&mut s.value_scope, ValueScope::AllTradables, "All tradables");
             row(ui, "Ignore items below", |ui| {
@@ -237,8 +282,8 @@ impl SettingsView {
         });
     }
 
-    fn appearance(&mut self, cols: &mut [Ui], s: &mut Settings) {
-        panel(&mut cols[0], "Presets", |ui| {
+    fn appearance(&mut self, m: &mut Masonry, s: &mut Settings) {
+        m.panel("Presets", |ui| {
             let label = theme::preset_list().into_iter().find(|(id, ..)| *id == s.theme_preset).map(|(_, l, _)| l).unwrap_or("Orokin Gold");
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Theme").color(TEXT_MUTED()));
@@ -256,7 +301,7 @@ impl SettingsView {
                 s.inventory_rows = false;
             }
         });
-        panel(&mut cols[1], "Style", |ui| {
+        m.panel("Style", |ui| {
             row(ui, "Corners", |ui| {
                 let mut v = s.corner_style.clone();
                 let opts: [(&str, &str); 3] = [("sharp", "Sharp"), ("soft", "Soft"), ("round", "Round")];
@@ -277,12 +322,17 @@ impl SettingsView {
             });
             ui.label(RichText::new("How the inventory grid shows items.").size(11.5).color(TEXT_MUTED()));
         });
-        panel(&mut cols[2], "App size", |ui| {
+        m.panel("App size", |ui| {
             ui.label("Interface scale");
             ui.label(RichText::new("Zooms the whole app.").size(11.5).color(TEXT_MUTED()));
-            ui.add(egui::Slider::new(&mut s.ui_scale, 0.75..=1.75).step_by(0.05).show_value(true));
+            // Rescaling mid-drag moves the slider under the cursor: apply on
+            // release, or right away for typed values and arrow keys.
+            let resp = ui.add(egui::Slider::new(&mut s.ui_scale, 0.75..=1.75).step_by(0.05).show_value(true));
+            if resp.drag_stopped() || (resp.changed() && !resp.dragged()) {
+                stores::apply_theme(ui.ctx(), s);
+            }
         });
-        panel(&mut cols[2], "Sidebar views", |ui| {
+        m.panel("Sidebar views", |ui| {
             for v in ViewName::SIDEBAR.into_iter().filter(|v| v.hideable()) {
                 let mut shown = !s.hidden_views.iter().any(|h| h == v.id());
                 row(ui, v.label(), |ui| {
@@ -297,17 +347,34 @@ impl SettingsView {
         });
     }
 
-    fn about(&mut self, cols: &mut [Ui]) {
-        panel(&mut cols[0], "WFHelper (Rust)", |ui| {
+    fn about(&mut self, m: &mut Masonry) {
+        m.panel(app_meta::APP_NAME, |ui| {
             ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
-            ui.label(RichText::new("Unofficial Warframe companion. Rust port of WFHelper; inventory reading by wf-api-rust.").color(TEXT_SECONDARY()));
-            ui.hyperlink_to("Original project", "https://github.com/WFHelper/WFHelper");
+            ui.label(RichText::new("Unofficial Warframe companion. A Rust port of WFHelper; inventory reading by wf-api-rust.").color(TEXT_SECONDARY()));
+            ui.add_space(4.0);
+            ui.hyperlink_to("Source code", app_meta::REPO_URL);
+            ui.hyperlink_to("WFHelper (original project)", app_meta::ORIGINAL_REPO_URL);
             ui.hyperlink_to("wf-api-rust", "https://github.com/FluffyPunk/wf-api-rust");
         });
-        panel(&mut cols[1], "Data sources", |ui| {
-            for line in ["DE public export & world state", "warframe.market (prices, orders)", "browse.wf (arbitrations)", "drops.warframestat.us (drop tables)"] {
-                ui.label(RichText::new(line).color(TEXT_SECONDARY()));
+        m.panel("Data sources", |ui| {
+            let sheet = riven_good_rolls::sheet_url();
+            let sources: [(&str, &str, &str); 8] = [
+                ("DE Public Export", constants::PUBLIC_EXPORT_INDEX_URL, "Items, recipes, relics, riven stats"),
+                ("DE world state", constants::WORLD_STATE_URL, "Fissures, events, Baro"),
+                ("warframe.market", constants::WFM_SITE, "Prices, orders, riven auctions"),
+                ("browse.wf", constants::ARBITRATION_SCHEDULE_URL, "Arbitration schedule"),
+                ("drops.warframestat.us", constants::DROPS_URL, "Drop tables"),
+                ("Warframe Wiki", constants::WIKI_BASE, "Item pages"),
+                ("WFHelper assets", constants::ICON_MIRROR_BASE, "Mod and arcane card art"),
+                ("Riven good rolls", &sheet, "Community stat recommendations"),
+            ];
+            for (name, url, what) in sources {
+                ui.horizontal(|ui| {
+                    ui.hyperlink_to(name, url).on_hover_text(url);
+                    ui.label(RichText::new(what).size(12.0).color(TEXT_MUTED()));
+                });
             }
+            ui.add_space(4.0);
             ui.label(RichText::new("Not affiliated with Digital Extremes.").size(11.5).color(TEXT_MUTED()));
         });
     }

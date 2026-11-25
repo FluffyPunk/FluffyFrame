@@ -4,7 +4,7 @@
 use chrono::Utc;
 use egui::{Align, FontId, Layout, Margin, RichText, Ui, vec2};
 use egui_extras::{Column, TableBuilder};
-use wfhelper_core::services::world_state::WorldState;
+use fluffyframe_core::services::world_state::WorldState;
 
 use super::arbi::ArbiView;
 use super::need_game_data;
@@ -108,7 +108,7 @@ impl WorldView {
             ui.columns(4, |cols| {
                 let week = ws.weekly_reset;
                 if let Some(a) = &ws.archon_hunt {
-                    let shard = wfhelper_core::services::world_state::archon_shard(&a.boss);
+                    let shard = fluffyframe_core::services::world_state::archon_shard(&a.boss);
                     week_card(&mut cols[0], "Archon Hunt", counter("archonHunt", a.expiry), 1, &format!("Boss: {} - {shard} Archon Shard this week", a.boss), a.expiry);
                 }
                 if let Some(c) = &ws.circuit {

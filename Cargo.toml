@@ -1,20 +1,25 @@
 [package]
-name = "wfhelper-rust"
-version = "0.1.0"
+name = "fluffyframe"
+version.workspace = true
 edition = "2024"
-description = "Unofficial Warframe companion app (Rust port of WFHelper)."
+description = "Unofficial Warframe companion app (FluffyFrame, a Rust port of WFHelper)."
 license = "MIT"
 
 [[bin]]
-name = "wfhelper"
+name = "fluffyframe"
 path = "src/main.rs"
 
 [workspace]
-members = ["crates/wf-api", "crates/wfhelper-core"]
+members = ["crates/wf-api", "crates/fluffyframe-core"]
+
+# The app and fluffyframe-core share one version: core reports it as APP_VERSION
+# (User-Agent).
+[workspace.package]
+version = "0.1.2"
 
 [workspace.dependencies]
 wf-api = { path = "crates/wf-api" }
-wfhelper-core = { path = "crates/wfhelper-core" }
+fluffyframe-core = { path = "crates/fluffyframe-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.154"
 log = { version = "0.4", features = ["std"] }
@@ -22,7 +27,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock", "s
 crossbeam-channel = "0.5.17"
 
 [dependencies]
-wfhelper-core.workspace = true
+fluffyframe-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true

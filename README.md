@@ -1,6 +1,6 @@
-# WFHelper (Rust)
+# FluffyFrame
 
-A Rust port of [WFHelper](https://github.com/WFHelper/WFHelper), the unofficial
+FluffyFrame is a Rust port of [WFHelper](https://github.com/WFHelper/WFHelper), the unofficial
 Warframe companion app. It is a native egui app with no Electron and no Node.
 
 It reads your inventory straight from the running game, prices it with live
@@ -17,21 +17,21 @@ On Linux, reading the game's memory is blocked by Yama `ptrace_scope` on most
 distributions. To allow it, do one of these:
 
 ```sh
-sudo setcap cap_sys_ptrace+ep target/release/wfhelper   # per binary
-sudo sysctl kernel.yama.ptrace_scope=0                  # until reboot
+sudo setcap cap_sys_ptrace+ep target/release/fluffyframe   # per binary
+sudo sysctl kernel.yama.ptrace_scope=0                     # until reboot
 ```
 
 If you can't allow it, import an `inventory.json` or an AlecaFrame `lastData.dat`
 in Settings instead.
 
-Environment overrides:
+Environment overrides (the pre-rename `WFHELPER_*` names still work):
 
 | Variable | Purpose |
 |---|---|
-| `WFHELPER_DATA_DIR` | Data folder (settings, snapshot, caches). Defaults to the platform data dir. |
-| `WFHELPER_EE_LOG` | EE.log path, overriding discovery. |
-| `WFHELPER_DEBUG` | Debug logging. |
-| `WFHELPER_VIEW` | Opens a specific view on launch (`inventory`, `relics`, …), handy for screenshots. |
+| `FLUFFYFRAME_DATA_DIR` | Data folder (settings, snapshot, caches). Defaults to the platform data dir; a pre-rename `wfhelper-rust` folder there is moved over on first launch. |
+| `FLUFFYFRAME_EE_LOG` | EE.log path, overriding discovery. |
+| `FLUFFYFRAME_DEBUG` | Debug logging. |
+| `FLUFFYFRAME_VIEW` | Opens a specific view on launch (`inventory`, `relics`, …), handy for screenshots. |
 
 ## Layout
 
@@ -46,8 +46,8 @@ The structure follows the original repository:
 | `src/stores/*` | `src/stores/` |
 | `src/styles/tokens.css`, `src/lib/theme/*` | `src/theme.rs` (same color tokens, Rajdhani/Barlow fonts) |
 | `src/lib/assetUrls.ts`, `assets/` | `src/assets.rs`, `assets/` (embedded at build time) |
-| `config/*` | `crates/wfhelper-core/src/config/` |
-| `services/*` | `crates/wfhelper-core/src/services/` (each file names the TS file it replaces) |
+| `config/*` | `crates/fluffyframe-core/src/config/` |
+| `services/*` | `crates/fluffyframe-core/src/services/` (each file names the TS file it replaces) |
 | warframe-api-helper download + `gameMemory*.ts` | `crates/wf-api`: [wf-api-rust](https://github.com/FluffyPunk/wf-api-rust) as a library |
 
 `crates/wf-api` keeps wf-api-rust's `process.rs` verbatim and its scan algorithm,
@@ -69,7 +69,8 @@ is vendored here. If it gains a `lib.rs`, this crate can become a git dependency
 `assets/` holds the original's icons, planet and relic art (from the MIT-licensed
 WFHelper repo; game art belongs to Digital Extremes) and the Rajdhani and Barlow
 fonts (SIL OFL, licenses in `assets/fonts/`), converted from WOFF2 to TTF because
-egui reads TTF/OTF only. Everything is embedded in the binary.
+egui reads TTF/OTF only. The Rajdhani files have the original's `.03em` letter
+spacing built into their advance widths, since egui has no global letter spacing. Everything is embedded in the binary.
 
 ## Feature status
 
@@ -121,7 +122,7 @@ Not ported yet:
 
 ```sh
 cargo test --workspace
-cargo run -p wfhelper-core --example smoke   # live check against the real endpoints
+cargo run -p fluffyframe-core --example smoke   # live check against the real endpoints
 ```
 
 Not affiliated with Digital Extremes.

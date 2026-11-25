@@ -1,7 +1,7 @@
 //! Archon shard pips (original: `ArchonShardPips.svelte`).
 
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, vec2};
-use wfhelper_core::services::inventory::{ArchonShard, ShardColor};
+use fluffyframe_core::services::inventory::{ArchonShard, ShardColor};
 
 use crate::components::ui as kit;
 use crate::stores::AppState;

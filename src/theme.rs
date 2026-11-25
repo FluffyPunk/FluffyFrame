@@ -173,10 +173,15 @@ pub fn RADIUS_LG() -> u8 {
     radius(10)
 }
 
-/// Rajdhani: page titles, card titles, sidebar.
+/// Rajdhani 400: underline tabs.
+pub fn display_light() -> FontFamily {
+    FontFamily::Name("display-light".into())
+}
+/// Rajdhani 500: sidebar, chips, labels.
 pub fn display() -> FontFamily {
     FontFamily::Name("display".into())
 }
+/// Rajdhani 600: page titles, card titles, buttons.
 pub fn display_bold() -> FontFamily {
     FontFamily::Name("display-bold".into())
 }
@@ -225,10 +230,13 @@ fn fonts() -> FontDefinitions {
     let add = |fonts: &mut FontDefinitions, name: &str, bytes: &'static [u8]| {
         fonts.font_data.insert(name.into(), Arc::new(FontData::from_static(bytes)));
     };
-    add(&mut fonts, "barlow", include_bytes!("../assets/fonts/barlow-latin-500-normal.ttf"));
+    // The original's weights. The Rajdhani files carry its `letter-spacing: .03em`
+    // in their advance widths, since egui has no global letter spacing.
+    add(&mut fonts, "barlow-400", include_bytes!("../assets/fonts/barlow-latin-400-normal.ttf"));
     add(&mut fonts, "barlow-600", include_bytes!("../assets/fonts/barlow-latin-600-normal.ttf"));
+    add(&mut fonts, "rajdhani-400", include_bytes!("../assets/fonts/rajdhani-latin-400-normal.ttf"));
+    add(&mut fonts, "rajdhani-500", include_bytes!("../assets/fonts/rajdhani-latin-500-normal.ttf"));
     add(&mut fonts, "rajdhani-600", include_bytes!("../assets/fonts/rajdhani-latin-600-normal.ttf"));
-    add(&mut fonts, "rajdhani-700", include_bytes!("../assets/fonts/rajdhani-latin-700-normal.ttf"));
 
     // Keep egui's defaults behind ours for symbols and emoji.
     let fallbacks = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
@@ -237,10 +245,11 @@ fn fonts() -> FontDefinitions {
         v.extend(fallbacks.iter().cloned());
         v
     };
-    fonts.families.insert(FontFamily::Proportional, with_fallbacks("barlow"));
+    fonts.families.insert(FontFamily::Proportional, with_fallbacks("barlow-400"));
     fonts.families.insert(body_strong(), with_fallbacks("barlow-600"));
-    fonts.families.insert(display(), with_fallbacks("rajdhani-600"));
-    fonts.families.insert(display_bold(), with_fallbacks("rajdhani-700"));
+    fonts.families.insert(display_light(), with_fallbacks("rajdhani-400"));
+    fonts.families.insert(display(), with_fallbacks("rajdhani-500"));
+    fonts.families.insert(display_bold(), with_fallbacks("rajdhani-600"));
     fonts
 }
 
@@ -290,9 +299,9 @@ pub fn install(ctx: &Context) {
     ctx.set_fonts(fonts());
     ctx.all_styles_mut(|style| {
         style.text_styles = [
-            (TextStyle::Heading, FontId::new(30.0, display_bold())),
+            (TextStyle::Heading, FontId::new(25.0, display_bold())),
             (TextStyle::Body, FontId::new(14.5, FontFamily::Proportional)),
-            (TextStyle::Button, FontId::new(14.0, FontFamily::Proportional)),
+            (TextStyle::Button, FontId::new(14.5, display_bold())),
             (TextStyle::Small, FontId::new(12.0, FontFamily::Proportional)),
             (TextStyle::Monospace, FontId::new(13.5, FontFamily::Monospace)),
         ]

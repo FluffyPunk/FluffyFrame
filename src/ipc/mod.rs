@@ -14,20 +14,20 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use wfhelper_core::config::settings::Settings;
-use wfhelper_core::services::api_helper_runner::HelperStatus;
-use wfhelper_core::services::arbi_schedule::ArbiSchedule;
-use wfhelper_core::services::drop_data::DropIndex;
-use wfhelper_core::services::ee_log_monitor::LogEvent;
-use wfhelper_core::services::inventory::Inventory;
-use wfhelper_core::services::item_database::ItemDb;
-use wfhelper_core::services::trade_tracker::TradeEvent;
-use wfhelper_core::services::wfm_catalog::Catalog;
-use wfhelper_core::services::wfm_client::Session;
-use wfhelper_core::services::wfm_orders::{NewOrder, Order, TopOrders};
-use wfhelper_core::services::wfm_riven_search::{RivenAuction, RivenWeapons};
-use wfhelper_core::services::wfm_stats_price::{Price, PriceCache};
-use wfhelper_core::services::world_state::WorldState;
+use fluffyframe_core::config::settings::Settings;
+use fluffyframe_core::services::api_helper_runner::HelperStatus;
+use fluffyframe_core::services::arbi_schedule::ArbiSchedule;
+use fluffyframe_core::services::drop_data::DropIndex;
+use fluffyframe_core::services::ee_log_monitor::LogEvent;
+use fluffyframe_core::services::inventory::Inventory;
+use fluffyframe_core::services::item_database::ItemDb;
+use fluffyframe_core::services::trade_tracker::TradeEvent;
+use fluffyframe_core::services::wfm_catalog::Catalog;
+use fluffyframe_core::services::wfm_client::Session;
+use fluffyframe_core::services::wfm_orders::{NewOrder, Order, TopOrders};
+use fluffyframe_core::services::wfm_riven_search::{RivenAuction, RivenWeapons};
+use fluffyframe_core::services::wfm_stats_price::{Price, PriceCache};
+use fluffyframe_core::services::world_state::WorldState;
 
 pub use data_worker::DataCmd;
 pub use inventory_worker::InventoryCmd;
@@ -52,7 +52,7 @@ pub enum Event {
     Arbi(Arc<ArbiSchedule>),
     Drops(Arc<DropIndex>),
     /// Community riven good-rolls sheet (attribute grades).
-    GoodRolls(Arc<wfhelper_core::services::riven_good_rolls::GoodRolls>),
+    GoodRolls(Arc<fluffyframe_core::services::riven_good_rolls::GoodRolls>),
     Prices(Vec<(String, Price)>),
     PriceQueue(usize),
     TopOrders { key: String, orders: TopOrders },

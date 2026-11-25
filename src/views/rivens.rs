@@ -4,10 +4,10 @@
 use std::sync::Arc;
 
 use egui::{Align, Align2, Color32, FontId, Layout, Margin, Pos2, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
-use wfhelper_core::services::inventory::Inventory;
-use wfhelper_core::services::riven_good_rolls::AttrGrade;
-use wfhelper_core::services::rivens::{self, DecodedRiven, MAX_RANK, OwnedRiven};
-use wfhelper_core::services::wfm_riven_search as rivens_wfm;
+use fluffyframe_core::services::inventory::Inventory;
+use fluffyframe_core::services::riven_good_rolls::AttrGrade;
+use fluffyframe_core::services::rivens::{self, DecodedRiven, MAX_RANK, OwnedRiven};
+use fluffyframe_core::services::wfm_riven_search as rivens_wfm;
 
 use crate::assets;
 use crate::components::{format, ui as kit};
@@ -436,7 +436,7 @@ impl RivensView {
                 let data = state.good_rolls.as_ref().zip(state.db.as_ref()).and_then(|(g, db)| Some((g.get(&d.weapon_name, &db.rivens)?, db)));
                 match data {
                     Some((data, db)) => {
-                        use wfhelper_core::services::riven_good_rolls::sheet_tag;
+                        use fluffyframe_core::services::riven_good_rolls::sheet_tag;
                         let label = |tag: &str| db.rivens.entry(&riven.item_type, tag).map(|e| e.name.clone()).unwrap_or_else(|| tag.to_string());
                         let buffs: Vec<String> = riven.buffs.iter().map(|b| sheet_tag(&b.tag)).collect();
                         let curses: Vec<String> = riven.curses.iter().map(|c| sheet_tag(&c.tag)).collect();

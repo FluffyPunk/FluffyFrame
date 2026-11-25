@@ -3,9 +3,9 @@
 use std::sync::Arc;
 
 use crossbeam_channel::Receiver;
-use wfhelper_core::services::wfm_orders::{self, NewOrder};
-use wfhelper_core::services::wfm_stats_price::Variant;
-use wfhelper_core::services::{wfm_client, wfm_riven_search};
+use fluffyframe_core::services::wfm_orders::{self, NewOrder};
+use fluffyframe_core::services::wfm_stats_price::Variant;
+use fluffyframe_core::services::{wfm_client, wfm_riven_search};
 
 use super::{Emitter, Event, ToastKind};
 
@@ -22,7 +22,7 @@ pub enum MarketCmd {
 }
 
 pub fn top_orders_key(slug: &str, variant: Variant) -> String {
-    wfhelper_core::services::wfm_stats_price::price_key(slug, variant)
+    fluffyframe_core::services::wfm_stats_price::price_key(slug, variant)
 }
 
 pub fn run(emitter: Emitter, rx: Receiver<MarketCmd>) {

@@ -15,7 +15,7 @@ pub fn show(ctx: &Context, state: &mut AppState) {
     if state.toasts.is_empty() {
         return;
     }
-    egui::Area::new(egui::Id::unique("wfhelper-toasts"))
+    egui::Area::new(egui::Id::unique("toasts"))
         .anchor(Align2::RIGHT_BOTTOM, [-16.0, -36.0])
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {

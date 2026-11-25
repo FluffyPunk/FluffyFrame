@@ -1,7 +1,7 @@
 //! Link buttons (original: `WikiButton.svelte`, `DocsLink.svelte`).
 
 use egui::Ui;
-use wfhelper_core::config::constants::WIKI_BASE;
+use fluffyframe_core::config::constants::WIKI_BASE;
 
 pub fn wiki_button(ui: &mut Ui, name: &str) {
     let url = format!("{WIKI_BASE}{}", name.replace(' ', "_"));

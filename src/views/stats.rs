@@ -2,8 +2,8 @@
 
 use chrono::{Duration, NaiveDate, Utc};
 use egui::{Color32, FontId, ImageSource, Margin, RichText, Sense, Stroke, Ui, Vec2, pos2, vec2};
-use wfhelper_core::services::ee_log_monitor::{Direction, TradeKind};
-use wfhelper_core::services::stats_tracker::DayStats;
+use fluffyframe_core::services::ee_log_monitor::{Direction, TradeKind};
+use fluffyframe_core::services::stats_tracker::DayStats;
 
 use crate::assets;
 use crate::components::{format, ui as kit};

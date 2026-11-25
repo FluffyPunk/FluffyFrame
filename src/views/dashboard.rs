@@ -2,7 +2,7 @@
 
 use chrono::{Datelike, Duration, TimeZone, Utc};
 use egui::{Align, FontId, Layout, RichText, Ui};
-use wfhelper_core::services::foundry;
+use fluffyframe_core::services::foundry;
 
 use super::ViewName;
 use crate::assets;

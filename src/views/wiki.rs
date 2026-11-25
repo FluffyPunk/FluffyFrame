@@ -2,8 +2,8 @@
 //! `DropsList.svelte`).
 
 use egui::{Align, FontId, Layout, Margin, RichText, Ui, vec2};
-use wfhelper_core::services::item_database::Refinement;
-use wfhelper_core::services::relic_service;
+use fluffyframe_core::services::item_database::Refinement;
+use fluffyframe_core::services::relic_service;
 
 use super::need_game_data;
 use crate::components::{format, ui as kit, widgets};
@@ -136,7 +136,7 @@ impl WikiView {
         }
     }
 
-    fn item(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend, db: &wfhelper_core::services::item_database::ItemDb, unique: &str) {
+    fn item(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend, db: &fluffyframe_core::services::item_database::ItemDb, unique: &str) {
         let Some(item) = db.get(unique) else { return };
         if kit::ghost_button(ui, "‹ Back to results").clicked() {
             self.selected = None;

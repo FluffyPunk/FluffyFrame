@@ -1,7 +1,7 @@
 //! Number and time formatting (original: `src/lib/format.ts`, `src/lib/timers.ts`).
 
 use chrono::{DateTime, Local, Utc};
-pub use wfhelper_core::config::game_tables::title_case;
+pub use fluffyframe_core::config::game_tables::title_case;
 
 /// 1234567 → "1,234,567"
 pub fn int(n: u64) -> String {
