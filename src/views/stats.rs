@@ -108,17 +108,42 @@ fn chart(ui: &mut Ui, points: &[(String, u64, i64)], height: f32) {
     }
     let line: Vec<_> = values.iter().enumerate().map(|(i, v)| pos2(x(i), y(*v))).collect();
     painter.add(egui::Shape::line(line.clone(), Stroke::new(1.5, Color32::from_gray(230))));
+    // A dot per day, while they don't crowd into a solid line.
+    let gap = inner.width() / (points.len() - 1) as f32;
+    if gap >= 6.0 {
+        let r = (gap / 4.0).clamp(1.5, 3.0);
+        for p in &line {
+            painter.circle_filled(*p, r, Color32::from_gray(230));
+        }
+    }
     let step = (points.len() / 6).max(1);
     for (i, (day, _, _)) in points.iter().enumerate().step_by(step) {
-        let label = NaiveDate::parse_from_str(day, "%Y-%m-%d").map(|d| d.format("%-m/%-d").to_string()).unwrap_or_default();
-        painter.text(pos2(x(i), inner.bottom() + 4.0), egui::Align2::CENTER_TOP, label, font.clone(), TEXT_MUTED());
+        painter.text(pos2(x(i), inner.bottom() + 4.0), egui::Align2::CENTER_TOP, day_label(day, "%-m/%-d"), font.clone(), TEXT_MUTED());
     }
     if let Some(h) = resp.hover_pos() {
-        let i = (((h.x - inner.left()) / inner.width()) * (points.len() - 1) as f32).round().clamp(0.0, (points.len() - 1) as f32) as usize;
-        painter.circle(line[i], 4.0, BG_SURFACE(), Stroke::new(1.5, Color32::WHITE));
+        let i = (((h.x - inner.left()) / gap).round().clamp(0.0, (points.len() - 1) as f32)) as usize;
+        painter.vline(line[i].x, inner.y_range(), Stroke::new(1.0, alpha(Color32::WHITE, 0.12)));
+        painter.circle(line[i], 4.5, BG_SURFACE(), Stroke::new(2.0, Color32::WHITE));
         let (day, v, d) = &points[i];
-        painter.text(line[i] + vec2(8.0, -8.0), egui::Align2::LEFT_BOTTOM, format!("{day}: {} ({d:+})", format::int(*v)), FontId::proportional(12.0), TEXT());
+        // Anchored on the point, shown at once (a regular hover tooltip waits for the pointer to rest).
+        let anchor = egui::PopupAnchor::Position(line[i] + vec2(12.0, -12.0));
+        egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), resp.id, anchor).show(|ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.label(RichText::new(day_label(day, "%a, %b %-d")).size(11.5).color(TEXT_MUTED()));
+            ui.label(RichText::new(format::int(*v)).font(FontId::new(16.0, theme::display_bold())));
+            let (text, color) = match d.signum() {
+                1 => (format!("+{}", format::int(d.unsigned_abs())), POSITIVE()),
+                -1 => (format!("−{}", format::int(d.unsigned_abs())), NEGATIVE()),
+                _ => ("±0".to_string(), TEXT_MUTED()),
+            };
+            ui.label(RichText::new(format!("{text} that day")).size(12.0).color(color));
+        });
     }
+}
+
+/// A recorded day ("2026-11-26") in the given chrono format.
+fn day_label(day: &str, fmt: &str) -> String {
+    NaiveDate::parse_from_str(day, "%Y-%m-%d").map(|d| d.format(fmt).to_string()).unwrap_or_else(|_| day.to_string())
 }
 
 impl StatsView {
