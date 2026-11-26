@@ -7,7 +7,18 @@ It reads your inventory straight from the running game, prices it with live
 warframe.market data, and shows relics, foundry, mastery, rivens, world state,
 arbitrations and trade stats.
 
+## Comparison
+
+| Stats | AlecaFrame | WFHelper | FluffyFrame |
+|---|---|---|---|
+| System availability | Windows only | Windows and Linux AppImage | Windows and Linux Binary |
+| Code solution | Proprietary Overwolf plugin | Open-source Electron App | Open-source Rust Binary |
+| RAM usage | Idk, but consider that it also uses Overwolf itself | 400MB-1GB | 100-200MB(current release) |
+| Features | Relic and Riven Overlays | Same, but lacking language support | Planned both with total language support + moving most of browse.wf information natively |
+
 ## Run
+
+There are portable binaries on [releases](https://github.com/FluffyPunk/FluffyFrame/releases). Just download and open.
 
 ```sh
 cargo run --release
