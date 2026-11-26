@@ -202,6 +202,14 @@ pub struct Affiliation {
     pub title: i64,
 }
 
+/// A star chart node the account has played.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeProgress {
+    pub tag: String,
+    pub completes: u64,
+    pub steel_path: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Inventory {
     pub source: Option<InventorySource>,
@@ -214,6 +222,11 @@ pub struct Inventory {
     pub xp_info: HashMap<String, u64>,
     pub rivens: Vec<OwnedRiven>,
     pub pending_recipes: Vec<PendingRecipe>,
+    #[serde(default)]
+    pub nodes: Vec<NodeProgress>,
+    /// Intrinsic skill (`LPS_*`: railjack, `LPS_DRIFT_*`: drifter) → rank.
+    #[serde(default)]
+    pub intrinsics: HashMap<String, u64>,
     pub affiliations: Vec<Affiliation>,
     /// Standing left today, shared by the aligned syndicates.
     pub daily_standing: Option<i64>,
@@ -371,6 +384,24 @@ impl Inventory {
             }
         }
 
+        for entry in arr(&root, "Missions") {
+            if let Some(tag) = entry.get("Tag").and_then(Value::as_str) {
+                inv.nodes.push(NodeProgress {
+                    tag: tag.to_string(),
+                    completes: field_u64(entry, "Completes").unwrap_or(0),
+                    steel_path: field_u64(entry, "Tier") == Some(1),
+                });
+            }
+        }
+        // LPS_* are intrinsic ranks (LPP_* are unspent point pools).
+        if let Some(skills) = root.get("PlayerSkills").and_then(Value::as_object) {
+            inv.intrinsics = skills
+                .iter()
+                .filter(|(k, _)| k.starts_with("LPS_"))
+                .filter_map(|(k, v)| Some((k.clone(), v.as_u64()?.min(MAX_INTRINSIC_RANK))))
+                .collect();
+        }
+
         for entry in arr(&root, "PendingRecipes") {
             if let Some(t) = entry.get("ItemType").and_then(Value::as_str) {
                 inv.pending_recipes.push(PendingRecipe {
@@ -505,6 +536,9 @@ pub fn relic_refinement(unique: &str) -> Option<(&str, &'static str)> {
         .into_iter()
         .find_map(|(suffix, subtype)| Some((unique.strip_suffix(suffix)?, subtype)))
 }
+
+/// Every intrinsic skill tops out at rank 10.
+pub const MAX_INTRINSIC_RANK: u64 = 10;
 
 /// Equipment level from XP (frames 1000·r², weapons 500·r²).
 pub fn level_from_xp(xp: u64, frame_like: bool, max_level: u32) -> u32 {

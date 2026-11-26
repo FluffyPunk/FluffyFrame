@@ -23,6 +23,7 @@ pub enum ItemKind {
     Amp,
     Companion,
     CompanionWeapon,
+    KDrive,
     Mod,
     Arcane,
     Relic,
@@ -50,6 +51,7 @@ impl ItemKind {
             ItemKind::Amp => "Amp",
             ItemKind::Companion => "Companion",
             ItemKind::CompanionWeapon => "Companion Weapon",
+            ItemKind::KDrive => "K-Drive",
             ItemKind::Mod => "Mod",
             ItemKind::Arcane => "Arcane",
             ItemKind::Relic => "Relic",
@@ -68,7 +70,7 @@ impl ItemKind {
     pub fn is_frame_like(self) -> bool {
         matches!(
             self,
-            ItemKind::Warframe | ItemKind::Archwing | ItemKind::Necramech | ItemKind::Companion
+            ItemKind::Warframe | ItemKind::Archwing | ItemKind::Necramech | ItemKind::Companion | ItemKind::KDrive
         )
     }
 
@@ -86,6 +88,7 @@ impl ItemKind {
                 | ItemKind::Amp
                 | ItemKind::Companion
                 | ItemKind::CompanionWeapon
+                | ItemKind::KDrive
         )
     }
 }
@@ -298,6 +301,10 @@ pub struct ItemDb {
     pub regions: HashMap<String, Region>,
     /// Riven stat tables and weapon dispositions.
     pub rivens: super::riven_data::RivenTables,
+    /// Items whose blueprint the Market sells (see `market_blueprints`).
+    pub market_blueprints: std::collections::HashSet<String>,
+    /// Mastery XP per star chart node tag (see `region_mastery`).
+    pub node_mastery: HashMap<String, super::region_mastery::NodeMastery>,
     /// Sigil uniqueName → texture. Sigils aren't items here (ExportFlavour isn't
     /// downloaded), but syndicate emblems are sigils.
     sigil_textures: HashMap<String, String>,
@@ -452,9 +459,21 @@ impl ItemDb {
         for file in ["ExportWarframes", "ExportWeapons", "ExportSentinels"] {
             for v in exports.array(file, file) {
                 let mut kind = kind_for(file, v.get("productCategory").and_then(Value::as_str));
-                // DE files amp prisms under "Pistols"; they master as amps.
-                if v.get("uniqueName").and_then(Value::as_str).is_some_and(|u| u.contains("/OperatorAmplifiers/")) {
-                    kind = ItemKind::Amp;
+                // DE files modular parts under "Pistols"; each masters as what it builds.
+                // Only those: MOA guns and hound weapons share the pet paths but are
+                // SentinelWeapons and master at weapon rate.
+                if kind == ItemKind::Secondary
+                    && let Some(u) = v.get("uniqueName").and_then(Value::as_str)
+                {
+                    if u.contains("/OperatorAmplifiers/") {
+                        kind = ItemKind::Amp;
+                    } else if u.contains("/Friendly/Pets/") {
+                        kind = ItemKind::Companion;
+                    } else if u.contains("/ModularMelee") {
+                        kind = ItemKind::Melee;
+                    } else if u.contains("/HoverboardParts/") {
+                        kind = ItemKind::KDrive;
+                    }
                 }
                 add(v, kind, &mut db);
             }

@@ -3,7 +3,9 @@
 
 use egui::{Align, FontId, Layout, Margin, RichText, Ui, vec2};
 use fluffyframe_core::services::item_database::ItemKind;
-use fluffyframe_core::services::mastery_helper::{self, MasteryRow, points_per_rank};
+use fluffyframe_core::services::mastery_helper::{
+    self, ChartProgress, MasteryRow, Progress, Source, points_per_rank, potential, total_xp,
+};
 
 use super::need_inventory;
 use crate::assets;
@@ -34,6 +36,7 @@ pub struct MasteryView {
     search: String,
     group: Option<&'static str>,
     status: Status,
+    route: Source,
 }
 
 fn remaining_xp(r: &MasteryRow) -> u64 {
@@ -53,11 +56,19 @@ impl MasteryView {
 
         let in_progress = rows.iter().filter(|r| !r.mastered && r.level > 0).count();
         let missing = rows.iter().filter(|r| !r.mastered && r.level == 0).count();
-        let easy: Vec<&MasteryRow> = {
-            let mut v: Vec<_> = rows.iter().filter(|r| !r.mastered && (r.owned || r.craftable_now)).collect();
-            v.sort_by(|a, b| remaining_xp(b).cmp(&remaining_xp(a)).then(a.name.cmp(&b.name)));
+        // Unmastered items with a known route, best route first, then most XP.
+        let roadmap: Vec<&MasteryRow> = {
+            let mut v: Vec<_> = rows.iter().filter(|r| !r.mastered && r.source != Source::Other).collect();
+            v.sort_by(|a, b| a.source.cmp(&b.source).then(remaining_xp(b).cmp(&remaining_xp(a))).then(a.name.cmp(&b.name)));
             v
         };
+        let easy: Vec<&MasteryRow> = roadmap.iter().copied().filter(|r| r.source <= Source::CraftIt).collect();
+
+        // Rank reached by doing all the easy mastery: level, claim and craft what's available now.
+        let easy_xp: u64 = easy.iter().map(|r| remaining_xp(r)).sum();
+        let pot = potential(total_xp(&inv, &db, summary.points), easy_xp);
+        let mr_title = format!("MR {} → MR {}", inv.mastery_rank, pot.rank);
+        let mr_sub = format!("{}/{} XP", format::int(pot.into), format::int(pot.span));
 
         let mut open: Option<String> = None;
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
@@ -86,8 +97,8 @@ impl MasteryView {
                     }
                     ui.separator();
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("MR {}", inv.mastery_rank)).font(FontId::new(40.0, theme::display_bold())));
-                        ui.label(RichText::new(format!("{} XP from item ranks", format::int(summary.points))).color(TEXT_SECONDARY()));
+                        ui.label(RichText::new(&mr_title).font(FontId::new(40.0, theme::display_bold())));
+                        ui.label(RichText::new(&mr_sub).color(TEXT_SECONDARY()));
                     });
                 });
             } else {
@@ -130,8 +141,8 @@ impl MasteryView {
                         stat(ui, &summary.total.to_string(), "Total", TEXT());
                         ui.separator();
                         ui.vertical(|ui| {
-                            ui.label(RichText::new(format!("MR {}", inv.mastery_rank)).font(FontId::new(40.0, theme::display_bold())));
-                            ui.label(RichText::new(format!("{} XP from item ranks", format::int(summary.points))).color(TEXT_SECONDARY()));
+                            ui.label(RichText::new(&mr_title).font(FontId::new(40.0, theme::display_bold())));
+                            ui.label(RichText::new(&mr_sub).color(TEXT_SECONDARY()));
                         });
                         ui.add_space(12.0);
                         });
@@ -141,37 +152,50 @@ impl MasteryView {
             }
             ui.add_space(10.0);
 
-            let easy_xp: u64 = easy.iter().map(|r| remaining_xp(r)).sum();
-            let owned_xp: u64 = easy.iter().filter(|r| r.owned).map(|r| remaining_xp(r)).sum();
-            let bp_xp: u64 = easy.iter().filter(|r| !r.owned).map(|r| remaining_xp(r)).sum();
+            let owned_xp: u64 = easy.iter().filter(|r| r.source == Source::Owned).map(|r| remaining_xp(r)).sum();
+            let bp_xp = easy_xp - owned_xp;
             ui.columns(3, |cols| {
                 insight(&mut cols[0], "Easy mastery", &format!("+{} XP", format::int(easy_xp)), POSITIVE(), &format!("{} items owned or buildable now", easy.len()));
                 insight(&mut cols[1], "Level what you own", &format!("+{} XP", format::int(owned_xp)), ACCENT(), "Owned and not yet rank 30");
-                insight(&mut cols[2], "From the Foundry", &format!("+{} XP", format::int(bp_xp)), INFO(), "Blueprint already in your inventory");
+                insight(&mut cols[2], "From the Foundry", &format!("+{} XP", format::int(bp_xp)), INFO(), "Ready to claim, or craftable right now");
             });
             ui.add_space(10.0);
 
             match self.tab {
                 Tab::Roadmap => {
-                    ui.horizontal(|ui| {
-                        kit::caption(ui, "Easy — owned or buildable");
-                    });
+                    const ROUTES: [Source; 6] =
+                        [Source::Owned, Source::ReadyToClaim, Source::CraftIt, Source::CraftParts, Source::Market, Source::ClanLab];
+                    let tabs: Vec<(Source, String)> = ROUTES
+                        .iter()
+                        .map(|&s| (s, format!("{} ({})", s.label(), roadmap.iter().filter(|r| r.source == s).count())))
+                        .collect();
+                    kit::tabs(ui, &mut self.route, &tabs);
+                    let shown: Vec<&&MasteryRow> = roadmap.iter().filter(|r| r.source == self.route).collect();
                     ui.add_space(4.0);
-                    for pair in easy.chunks(2) {
-                        ui.columns(2, |cols| {
-                            for (col, r) in cols.iter_mut().zip(pair) {
-                                if recommendation(col, r, db.image_url(&r.unique_name).as_deref()).clicked() {
-                                    open = Some(r.unique_name.clone());
-                                }
+                    // As many cards per row as fit at a readable minimum width, at most 4.
+                    let gap = 8.0;
+                    let avail = ui.available_width();
+                    let cols = (((avail + gap) / (300.0 + gap)).floor() as usize).clamp(1, 4);
+                    let w = (avail - gap * (cols - 1) as f32) / cols as f32;
+                    for chunk in shown.chunks(cols) {
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            for r in chunk {
+                                ui.allocate_ui(vec2(w, 0.0), |ui| {
+                                    ui.set_width(w);
+                                    if recommendation(ui, r, db.image_url(&r.unique_name).as_deref()).clicked() {
+                                        open = Some(r.unique_name.clone());
+                                    }
+                                });
                             }
                         });
                         ui.add_space(4.0);
                     }
-                    if easy.is_empty() {
-                        kit::empty(ui, "Nothing easy left", "Everything you own is mastered.");
+                    if shown.is_empty() {
+                        kit::empty(ui, "Nothing here", "No unmastered items on this route.");
                     }
                 }
-                Tab::Collection => self.collection(ui, &rows, &db, &mut open),
+                Tab::Collection => self.collection(ui, &rows, &mastery_helper::chart_progress(&inv, &db), &db, &mut open),
             }
         });
         if let Some(u) = open {
@@ -179,40 +203,53 @@ impl MasteryView {
         }
     }
 
-    fn collection(&mut self, ui: &mut Ui, rows: &[MasteryRow], db: &fluffyframe_core::services::item_database::ItemDb, open: &mut Option<String>) {
+    fn collection(
+        &mut self,
+        ui: &mut Ui,
+        rows: &[MasteryRow],
+        chart: &ChartProgress,
+        db: &fluffyframe_core::services::item_database::ItemDb,
+        open: &mut Option<String>,
+    ) {
         egui::CollapsingHeader::new(RichText::new("Detailed breakdown").font(FontId::new(15.0, theme::display_bold())))
             .default_open(true)
             .show(ui, |ui| {
                 kit::card(ui, |ui| {
                     ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = ROW_GAP;
                     for (label, kinds) in GROUPS {
                         let in_group: Vec<_> = rows.iter().filter(|r| kinds.contains(&r.kind)).collect();
                         if in_group.is_empty() {
                             continue;
                         }
-                        let total = in_group.len() as f32;
-                        let done = in_group.iter().filter(|r| r.mastered).count();
-                        let progress = in_group.iter().filter(|r| !r.mastered && r.level > 0).count();
-                        ui.horizontal(|ui| {
-                            ui.allocate_ui(vec2(140.0, 16.0), |ui| {
-                                ui.set_width(140.0);
-                                ui.label(RichText::new(label).size(12.5).color(TEXT_SECONDARY()));
-                            });
-                            ui.allocate_ui(vec2(110.0, 16.0), |ui| {
-                                ui.set_width(110.0);
-                                ui.label(RichText::new(format!("{done}/{} ({:.1}%)", in_group.len(), done as f32 / total * 100.0)).size(11.5).color(TEXT_MUTED()));
-                            });
-                            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), egui::Sense::hover());
-                            let p = ui.painter();
-                            p.rect_filled(rect, 2.0, BG_HOVER());
-                            let mut a = rect;
-                            a.set_width(rect.width() * (done + progress) as f32 / total);
-                            p.rect_filled(a, 2.0, ACCENT_DIM());
-                            let mut m = rect;
-                            m.set_width(rect.width() * done as f32 / total);
-                            p.rect_filled(m, 2.0, POSITIVE());
-                        });
+                        let done = in_group.iter().filter(|r| r.mastered).count() as u64;
+                        let started = in_group.iter().filter(|r| r.mastered || r.level > 0).count() as u64;
+                        breakdown_row(ui, label, Progress { done, total: in_group.len() as u64 }, started, POSITIVE());
                     }
+                });
+                ui.add_space(8.0);
+                // Star chart and intrinsics side by side, stacked when narrow.
+                kit::responsive_columns(ui, 420.0, 2, |ui, col| {
+                    kit::card(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        let (title, rows, color) = if col == 0 {
+                            let rows = [
+                                ("Normal", chart.nodes),
+                                ("Junctions", chart.junctions),
+                                ("Steel Path", chart.steel_path),
+                                ("Steel P. Junctions", chart.steel_junctions),
+                            ];
+                            ("Star chart", rows.to_vec(), INFO())
+                        } else {
+                            ("Intrinsics", vec![("Railjack", chart.railjack), ("Drifter", chart.drifter)], ACCENT())
+                        };
+                        ui.label(RichText::new(title).font(FontId::new(15.0, theme::display_bold())));
+                        ui.add_space(2.0);
+                        ui.spacing_mut().item_spacing.y = ROW_GAP;
+                        for (label, p) in rows {
+                            breakdown_row(ui, label, p, p.done, color);
+                        }
+                    });
                 });
             });
         ui.add_space(8.0);
@@ -289,7 +326,7 @@ impl MasteryView {
     }
 }
 
-const GROUPS: [(&str, &[ItemKind]); 8] = [
+const GROUPS: [(&str, &[ItemKind]); 9] = [
     ("Warframes", &[ItemKind::Warframe]),
     ("Primary", &[ItemKind::Primary]),
     ("Secondary", &[ItemKind::Secondary]),
@@ -298,7 +335,37 @@ const GROUPS: [(&str, &[ItemKind]); 8] = [
     ("Archwing", &[ItemKind::Archwing, ItemKind::ArchGun, ItemKind::ArchMelee]),
     ("Amps", &[ItemKind::Amp]),
     ("Necramech", &[ItemKind::Necramech]),
+    ("Misc", &[ItemKind::KDrive]),
 ];
+
+/// Vertical gap between breakdown rows.
+const ROW_GAP: f32 = 4.0;
+
+/// Label, "done/total (pct)", then a bar: `done` in `color`, `started` (≥ done) dimmed behind it.
+fn breakdown_row(ui: &mut Ui, label: &str, p: Progress, started: u64, color: egui::Color32) {
+    let total = p.total.max(1) as f32;
+    // Rows default to a control's height; these are plain text and a 4px bar.
+    ui.spacing_mut().interact_size.y = 14.0;
+    ui.horizontal(|ui| {
+        ui.allocate_ui(vec2(140.0, 14.0), |ui| {
+            ui.set_width(140.0);
+            ui.label(RichText::new(label).size(11.5).color(TEXT_SECONDARY()));
+        });
+        ui.allocate_ui(vec2(110.0, 14.0), |ui| {
+            ui.set_width(110.0);
+            ui.label(RichText::new(format!("{}/{} ({:.1}%)", p.done, p.total, p.done as f32 / total * 100.0)).size(10.5).color(TEXT_MUTED()));
+        });
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), egui::Sense::hover());
+        let painter = ui.painter();
+        painter.rect_filled(rect, 2.0, BG_HOVER());
+        let mut a = rect;
+        a.set_width(rect.width() * started as f32 / total);
+        painter.rect_filled(a, 2.0, ACCENT_DIM());
+        let mut m = rect;
+        m.set_width(rect.width() * p.done as f32 / total);
+        painter.rect_filled(m, 2.0, color);
+    });
+}
 
 fn insight(ui: &mut Ui, title: &str, value: &str, color: egui::Color32, sub: &str) {
     kit::card(ui, |ui| {
@@ -328,9 +395,12 @@ fn recommendation(ui: &mut Ui, r: &MasteryRow, image: Option<&str>) -> egui::Res
                             kit::pill(ui, &format!("MR {}", r.mastery_req), TEXT_SECONDARY());
                         }
                     });
-                    let how = if r.owned { "Owned: level it" } else { "Blueprint owned: build it" };
-                    ui.label(RichText::new(format!("{} · {how}", r.kind.label())).size(12.0).color(TEXT_SECONDARY()));
-                    ui.label(RichText::new(format!("Level {}/{}", r.level, r.max_level)).size(12.0).color(TEXT_MUTED()));
+                    ui.label(RichText::new(format!("{} · {}", r.kind.label(), r.source.label())).size(12.0).color(TEXT_SECONDARY()));
+                    let progress = match (r.source, r.parts) {
+                        (Source::Owned | Source::ReadyToClaim, _) | (_, None) => format!("Level {}/{}", r.level, r.max_level),
+                        (_, Some((have, total))) => format!("Parts {have}/{total}"),
+                    };
+                    ui.label(RichText::new(progress).size(12.0).color(TEXT_MUTED()));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(RichText::new(format!("+{} XP", format::int(remaining_xp(r)))).family(theme::body_strong()).color(ACCENT()));

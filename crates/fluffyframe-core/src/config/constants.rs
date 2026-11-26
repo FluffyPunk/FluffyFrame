@@ -14,6 +14,8 @@ pub const ICON_MIRROR_BASE: &str = "https://assets.wfhelper.com";
 /// PC world state. The old `content.warframe.com/dynamic/worldState.php` now 404s.
 pub const WORLD_STATE_URL: &str = "https://api.warframe.com/cdn/worldState.php";
 pub const ARBITRATION_SCHEDULE_URL: &str = "https://browse.wf/arbys.txt";
+pub const WFCD_ITEMS_BASE: &str = "https://raw.githubusercontent.com/WFCD/warframe-items/master/data/json/";
+pub const PEP_REGIONS_URL: &str = "https://raw.githubusercontent.com/calamity-inc/warframe-public-export-plus/senpai/ExportRegions.json";
 pub const DROPS_URL: &str = "https://drops.warframestat.us/data/all.json";
 
 pub const WFM_V1: &str = "https://api.warframe.market/v1";
@@ -30,6 +32,8 @@ pub const WFM_CATALOG_TTL: Duration = Duration::from_secs(24 * 3600);
 
 pub const WORLD_STATE_REFRESH: Duration = Duration::from_secs(60);
 pub const ARBI_SCHEDULE_TTL: Duration = Duration::from_secs(24 * 3600);
+pub const WFCD_ITEMS_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
+pub const PEP_REGIONS_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 pub const DROPS_TTL: Duration = Duration::from_secs(3 * 24 * 3600);
 
 /// Automatic inventory refreshes wait this long between helper runs.

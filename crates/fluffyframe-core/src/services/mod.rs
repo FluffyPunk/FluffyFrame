@@ -11,7 +11,9 @@ pub mod logger;
 // Game data
 pub mod drop_data;
 pub mod item_database;
+pub mod market_blueprints;
 pub mod public_export;
+pub mod region_mastery;
 pub mod riven_data;
 pub mod riven_good_rolls;
 pub mod wiki_art;

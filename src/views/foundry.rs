@@ -49,7 +49,7 @@ impl Tab {
             Tab::Melee => kind == ItemKind::Melee,
             Tab::Archwing => matches!(kind, ItemKind::Archwing | ItemKind::ArchGun | ItemKind::ArchMelee | ItemKind::Necramech),
             Tab::Companion => matches!(kind, ItemKind::Companion | ItemKind::CompanionWeapon),
-            Tab::Misc => !kind.is_equipment(),
+            Tab::Misc => kind == ItemKind::KDrive || !kind.is_equipment(),
         }
     }
 }

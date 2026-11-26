@@ -11,7 +11,7 @@ use fluffyframe_core::config::constants::WORLD_STATE_REFRESH;
 use fluffyframe_core::services::arbi_schedule::ArbiSchedule;
 use fluffyframe_core::services::item_database::ItemDb;
 use fluffyframe_core::services::world_state::{self, WorldState};
-use fluffyframe_core::services::{drop_data, notifications, public_export, riven_good_rolls, wfm_catalog};
+use fluffyframe_core::services::{drop_data, market_blueprints, notifications, region_mastery, public_export, riven_good_rolls, wfm_catalog};
 
 use super::{Emitter, Event, Shared, ToastKind};
 
@@ -31,7 +31,10 @@ fn load_game_data(shared: &Shared, emitter: &Emitter) -> Option<Arc<ItemDb>> {
     });
     match result {
         Ok(exports) => {
-            let db = Arc::new(ItemDb::build(&exports));
+            let mut db = ItemDb::build(&exports);
+            db.market_blueprints = market_blueprints::load();
+            db.node_mastery = region_mastery::load();
+            let db = Arc::new(db);
             *shared.db.write().unwrap() = Some(db.clone());
             emitter.emit(Event::GameData(db.clone()));
             Some(db)
