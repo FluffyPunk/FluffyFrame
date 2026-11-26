@@ -6,6 +6,7 @@ use crate::views::ViewName;
 
 pub const LOGO: ImageSource<'static> = include_image!("../assets/icons/logo.png");
 pub const PLATINUM: ImageSource<'static> = include_image!("../assets/icons/Platinum.png");
+pub const CREDITS: ImageSource<'static> = include_image!("../assets/icons/Credits.png");
 pub const DUCATS: ImageSource<'static> = include_image!("../assets/icons/OrokinDucats.png");
 pub const DUCATS_SMALL: ImageSource<'static> = include_image!("../assets/icons/ducats.png");
 pub const AYA: ImageSource<'static> = include_image!("../assets/icons/aya.webp");

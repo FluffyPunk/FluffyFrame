@@ -216,7 +216,11 @@ impl FoundryView {
                     });
                     ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!("{} cr", kit::compact_num(c.row.build_price))).color(ACCENT()).family(theme::body_strong()));
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                kit::icon(ui, crate::assets::CREDITS, 16.0).on_hover_text("Credits to build");
+                                ui.label(RichText::new(kit::compact_num(c.row.build_price)).color(ACCENT()).family(theme::body_strong()));
+                            });
                             if c.row.owned_blueprints > 1 {
                                 ui.label(RichText::new(format!("×{} bp", c.row.owned_blueprints)).size(11.5).color(TEXT_MUTED()));
                             }
