@@ -165,45 +165,46 @@ pub fn syndicate_label(tag: &str) -> String {
     label.to_string()
 }
 
-/// The sigil (DE uniqueName) that shows a syndicate's emblem at `rank`.
-/// Aligned syndicates and Conclave have one base emblem; open-world syndicates
-/// have a sigil per rank (shown from rank 1, the first one below that).
-/// `None` for syndicates without one (events, journals).
-pub fn syndicate_emblem(tag: &str, rank: i64) -> Option<String> {
-    const SIGILS: &str = "/Lotus/Upgrades/Skins/Sigils/";
-    if matches!(tag, "LibrarySyndicate" | "CephalonSimarisSyndicate") {
+/// The syndicate whose own daily standing cap is the inventory field
+/// `DailyAffiliation<suffix>`. (The bare `DailyAffiliation` is the cap the six
+/// aligned syndicates share.)
+pub fn daily_cap_syndicate(suffix: &str) -> Option<&'static str> {
+    Some(match suffix {
+        "Pvp" => "ConclaveSyndicate",
+        "Library" => "LibrarySyndicate",
+        "Cetus" => "CetusSyndicate",
+        "Quills" => "QuillsSyndicate",
+        "Solaris" => "SolarisSyndicate",
+        "Ventkids" => "VentKidsSyndicate",
+        "Vox" => "VoxSyndicate",
+        "Entrati" => "EntratiSyndicate",
+        "Necraloid" => "NecraloidSyndicate",
+        "Kahl" => "KahlSyndicate",
+        "Zariman" => "ZarimanSyndicate",
+        "Cavia" => "EntratiLabSyndicate",
+        "Hex" => "HexSyndicate",
+        _ => return None,
+    })
+}
+
+/// The sigil (DE uniqueName) with a syndicate's base (rank 0) emblem, for the
+/// syndicates DE's export has one for: the aligned six, Conclave and Simaris.
+/// Open-world syndicates only have rank sigils there; their logos are bundled
+/// with the app instead.
+pub fn syndicate_emblem(tag: &str) -> Option<String> {
+    let sigil = match tag {
+        "ArbitersSyndicate" => "SyndicateSigilArbitersOfHexisA",
+        "CephalonSudaSyndicate" => "SyndicateSigilCephalonSudaA",
+        "NewLokaSyndicate" => "SyndicateSigilNewLokaA",
+        "PerrinSyndicate" => "SyndicateSigilPerrinSequenceA",
+        "RedVeilSyndicate" => "SyndicateSigilRedVeilA",
+        "SteelMeridianSyndicate" => "SyndicateSigilSteelMeridianA",
+        "ConclaveSyndicate" => "SyndicateSigilConclaveA",
         // "Cephalon Simaris Sigil" (the wiki's name), the Sanctuary Warden.
-        return Some(format!("{SIGILS}CollectorSigil"));
-    }
-    let base = match tag {
-        "ArbitersSyndicate" => "ArbitersOfHexis",
-        "CephalonSudaSyndicate" => "CephalonSuda",
-        "NewLokaSyndicate" => "NewLoka",
-        "PerrinSyndicate" => "PerrinSequence",
-        "RedVeilSyndicate" => "RedVeil",
-        "SteelMeridianSyndicate" => "SteelMeridian",
-        "ConclaveSyndicate" => "Conclave",
-        _ => "",
-    };
-    if !base.is_empty() {
-        return Some(format!("{SIGILS}SyndicateSigil{base}A"));
-    }
-    let (family, top) = match tag {
-        "CetusSyndicate" => ("Ostron", 5),
-        "QuillsSyndicate" => ("Quills", 5),
-        "SolarisSyndicate" => ("Solaris", 5),
-        "VentKidsSyndicate" => ("Ventkids", 5),
-        "VoxSyndicate" => ("Vox", 5),
-        "EntratiSyndicate" => ("Entrati", 5),
-        "NecraloidSyndicate" => ("Necraloid", 3),
-        "ZarimanSyndicate" => ("Holdfasts", 5),
-        "EntratiLabSyndicate" => ("Cavia", 5),
-        "HexSyndicate" => ("Hex", 5),
-        "KahlSyndicate" => return Some(format!("{SIGILS}KahlSupporterPackSigil")),
+        "LibrarySyndicate" | "CephalonSimarisSyndicate" => "CollectorSigil",
         _ => return None,
     };
-    let word = ["One", "Two", "Three", "Four", "Five"][(rank.clamp(1, top) - 1) as usize];
-    Some(format!("{SIGILS}Syndicate/{family}Rank{word}"))
+    Some(format!("/Lotus/Upgrades/Skins/Sigils/{sigil}"))
 }
 
 /// Every stat DE's riven tables can roll (ExportUpgrades, 2026-11), including
@@ -348,12 +349,19 @@ pub fn split_camel(s: &str) -> String {
 mod tests {
 
     #[test]
+    fn daily_caps() {
+        assert_eq!(daily_cap_syndicate("Library"), Some("LibrarySyndicate"));
+        assert_eq!(daily_cap_syndicate("Cavia"), Some("EntratiLabSyndicate"));
+        assert_eq!(daily_cap_syndicate(""), None);
+    }
+
+    #[test]
     fn syndicate_emblems() {
-        assert_eq!(syndicate_emblem("RedVeilSyndicate", 3).as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/SyndicateSigilRedVeilA"));
-        assert_eq!(syndicate_emblem("CetusSyndicate", 0).as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/Syndicate/OstronRankOne"));
-        assert_eq!(syndicate_emblem("NecraloidSyndicate", 5).as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/Syndicate/NecraloidRankThree"));
-        assert_eq!(syndicate_emblem("LibrarySyndicate", 0).as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/CollectorSigil"));
-        assert_eq!(syndicate_emblem("EventSyndicate", 5), None);
+        assert_eq!(syndicate_emblem("RedVeilSyndicate").as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/SyndicateSigilRedVeilA"));
+        assert_eq!(syndicate_emblem("ConclaveSyndicate").as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/SyndicateSigilConclaveA"));
+        assert_eq!(syndicate_emblem("CetusSyndicate"), None);
+        assert_eq!(syndicate_emblem("LibrarySyndicate").as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/CollectorSigil"));
+        assert_eq!(syndicate_emblem("EventSyndicate"), None);
     }
 
     use super::*;

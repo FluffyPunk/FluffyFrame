@@ -18,6 +18,26 @@ pub const ENDO: ImageSource<'static> = include_image!("../assets/icons/endo.png"
 /// Blank riven card the Rivens view draws stats onto (316×400).
 pub const RIVEN_TEMPLATE: ImageSource<'static> = include_image!("../assets/riven/RivenTemplate.png");
 
+/// Open-world syndicate logos (256px, from each syndicate's wiki page; the ones
+/// in-game lists use). DE's export only has their rank sigils.
+pub fn syndicate_logo(tag: &str) -> Option<ImageSource<'static>> {
+    Some(match tag {
+        "CetusSyndicate" => include_image!("../assets/syndicates/ostron.png"),
+        "QuillsSyndicate" => include_image!("../assets/syndicates/quills.png"),
+        "KahlSyndicate" => include_image!("../assets/syndicates/kahl.png"),
+        "SolarisSyndicate" => include_image!("../assets/syndicates/solaris.png"),
+        "VoxSyndicate" => include_image!("../assets/syndicates/vox.png"),
+        "VentKidsSyndicate" => include_image!("../assets/syndicates/ventkids.png"),
+        "NightcapJournalSyndicate" => include_image!("../assets/syndicates/nightcap.png"),
+        "EntratiSyndicate" => include_image!("../assets/syndicates/entrati.png"),
+        "NecraloidSyndicate" => include_image!("../assets/syndicates/necraloid.png"),
+        "EntratiLabSyndicate" => include_image!("../assets/syndicates/cavia.png"),
+        "ZarimanSyndicate" => include_image!("../assets/syndicates/holdfasts.png"),
+        "HexSyndicate" => include_image!("../assets/syndicates/hex.png"),
+        _ => return None,
+    })
+}
+
 /// Damage-type icon for a riven stat tag (original: `ELEMENT_ICON_URLS`).
 pub fn element_icon(tag: &str) -> Option<ImageSource<'static>> {
     Some(match tag {

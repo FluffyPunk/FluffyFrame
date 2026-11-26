@@ -215,7 +215,12 @@ pub struct Inventory {
     pub rivens: Vec<OwnedRiven>,
     pub pending_recipes: Vec<PendingRecipe>,
     pub affiliations: Vec<Affiliation>,
+    /// Standing left today, shared by the aligned syndicates.
     pub daily_standing: Option<i64>,
+    /// Standing left today for syndicates with their own cap (open worlds,
+    /// Simaris, Conclave), by syndicate tag.
+    #[serde(default)]
+    pub daily_standing_by_syndicate: HashMap<String, i64>,
 }
 
 /// True when `value` looks like an inventory object.
@@ -291,6 +296,15 @@ impl Inventory {
             ..Default::default()
         };
         inv.daily_standing = root.get("DailyAffiliation").and_then(Value::as_i64);
+        if let Some(obj) = root.as_object() {
+            inv.daily_standing_by_syndicate = obj
+                .iter()
+                .filter_map(|(k, v)| {
+                    let tag = crate::config::game_tables::daily_cap_syndicate(k.strip_prefix("DailyAffiliation")?)?;
+                    Some((tag.to_string(), v.as_i64()?))
+                })
+                .collect();
+        }
 
         // Stacks, merged per (item, rank).
         let mut stacks: HashMap<(String, Option<u32>), OwnedItem> = HashMap::new();

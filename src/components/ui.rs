@@ -151,8 +151,8 @@ pub fn remote_image(ui: &mut Ui, url: Option<&str>, size: Vec2) -> Response {
 
 /// Paints a remote image centred in `rect`, scaled to fit without stretching
 /// (mod cards are portrait, arcane bases landscape).
-pub fn paint_image_fit(ui: &Ui, url: &str, rect: egui::Rect) {
-    let image = egui::Image::new(url.to_string()).fit_to_exact_size(rect.size()).maintain_aspect_ratio(true);
+pub fn paint_image_fit<'a>(ui: &Ui, source: impl Into<egui::ImageSource<'a>>, rect: egui::Rect) {
+    let image = egui::Image::new(source).fit_to_exact_size(rect.size()).maintain_aspect_ratio(true);
     let size = image.load_and_calc_size(ui, rect.size()).unwrap_or(rect.size());
     image.paint_at(ui, egui::Rect::from_center_size(rect.center(), size));
 }

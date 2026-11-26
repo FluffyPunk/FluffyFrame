@@ -640,9 +640,9 @@ impl ItemDb {
         })
     }
 
-    /// Emblem image for a syndicate at `rank` (see [`game_tables::syndicate_emblem`]).
-    pub fn syndicate_emblem_url(&self, tag: &str, rank: i64) -> Option<String> {
-        let sigil = crate::config::game_tables::syndicate_emblem(tag, rank)?;
+    /// Emblem image for a syndicate (see [`game_tables::syndicate_emblem`]).
+    pub fn syndicate_emblem_url(&self, tag: &str) -> Option<String> {
+        let sigil = crate::config::game_tables::syndicate_emblem(tag)?;
         self.sigil_textures.get(&sigil).map(|t| format!("{PUBLIC_EXPORT_IMAGE_BASE}{t}"))
     }
 

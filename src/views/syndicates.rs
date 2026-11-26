@@ -17,18 +17,24 @@ const ALIGNED: &[&str] = &[
     "RedVeilSyndicate",
     "SteelMeridianSyndicate",
 ];
+/// Leftovers of past events: not shown.
+const INACTIVE: &[&str] = &["EventSyndicate"];
+
+/// Open-world syndicates and their sub-syndicates, in the order the tab shows
+/// them: Plains, Fortuna, Deimos, Zariman, Höllvania.
 const OPEN_WORLDS: &[&str] = &[
     "CetusSyndicate",
     "QuillsSyndicate",
+    "KahlSyndicate",
     "SolarisSyndicate",
-    "VentKidsSyndicate",
     "VoxSyndicate",
+    "VentKidsSyndicate",
+    "NightcapJournalSyndicate",
     "EntratiSyndicate",
     "NecraloidSyndicate",
-    "ZarimanSyndicate",
     "EntratiLabSyndicate",
+    "ZarimanSyndicate",
     "HexSyndicate",
-    "KahlSyndicate",
 ];
 
 /// Standing span of each rank (index = rank). Standing is cumulative: rank 5
@@ -90,6 +96,12 @@ fn is_simaris(tag: &str) -> bool {
     matches!(tag, "LibrarySyndicate" | "CephalonSimarisSyndicate")
 }
 
+/// Ranked by milestones, not standing (Kahl's Garrison, and the Nightcap
+/// Journal under Fortuna): only the rank means anything.
+fn milestone_ranked(tag: &str) -> bool {
+    matches!(tag, "KahlSyndicate" | "NightcapJournalSyndicate")
+}
+
 fn max_rank(tag: &str) -> i64 {
     match tag {
         "NecraloidSyndicate" => 3,
@@ -117,11 +129,11 @@ const EMBLEM: f32 = 56.0;
 
 /// The syndicate's sigil, or its initial when it has none (or the image is
 /// still loading from DE's CDN).
-fn emblem(ui: &mut Ui, url: Option<&str>, name: &str) {
+fn emblem(ui: &mut Ui, source: Option<egui::ImageSource<'static>>, name: &str) {
     let (rect, _) = ui.allocate_exact_size(vec2(EMBLEM, EMBLEM), egui::Sense::hover());
     ui.painter().rect_filled(rect, RADIUS_MD(), BG_WELL());
-    match url {
-        Some(url) => kit::paint_image_fit(ui, url, rect.shrink(4.0)),
+    match source {
+        Some(source) => kit::paint_image_fit(ui, source, rect.shrink(4.0)),
         None => {
             let initial = name.trim_start_matches("The ").chars().next().unwrap_or('?').to_string();
             ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, initial, FontId::new(26.0, theme::display_bold()), TEXT_MUTED());
@@ -134,7 +146,8 @@ fn standing_text(standing: i64) -> String {
     if standing < 0 { format!("−{n}") } else { n }
 }
 
-fn syndicate_card(ui: &mut Ui, a: &Affiliation, emblem_url: Option<String>) {
+/// `daily_left`: the syndicate's own daily standing cap, if it has one.
+fn syndicate_card(ui: &mut Ui, a: &Affiliation, emblem_src: Option<egui::ImageSource<'static>>, daily_left: Option<i64>) {
     let name = game_tables::syndicate_label(&a.tag);
     let top = max_rank(&a.tag);
     let simaris = is_simaris(&a.tag);
@@ -160,7 +173,7 @@ fn syndicate_card(ui: &mut Ui, a: &Affiliation, emblem_url: Option<String>) {
         kit::split_row(
             ui,
             |ui| {
-                emblem(ui, emblem_url.as_deref(), &name);
+                emblem(ui, emblem_src, &name);
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(&name).font(FontId::new(18.0, theme::display_bold())));
@@ -170,8 +183,18 @@ fn syndicate_card(ui: &mut Ui, a: &Affiliation, emblem_url: Option<String>) {
             |ui| widgets::wiki_button(ui, &name),
         );
         ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            let value = FontId::new(22.0, theme::display_bold());
+        let value = FontId::new(22.0, theme::display_bold());
+        if milestone_ranked(&a.tag) {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("Rank {}", a.title)).font(value));
+                ui.label(RichText::new(format!("/ {top}")).font(FontId::new(15.0, theme::display_bold())).color(TEXT_SECONDARY()));
+            });
+            // Where the bar would be, so cards in a row keep one height.
+            ui.add_space(8.0);
+            ui.label(RichText::new("Ranks up at milestones, not with standing").size(12.0).color(TEXT_MUTED()));
+            return;
+        }
+        let standing = |ui: &mut Ui| {
             match window {
                 Some((earned, cap)) => {
                     ui.label(RichText::new(standing_text(earned)).font(value).color(if earned < 0 { NEGATIVE() } else { TEXT() }));
@@ -182,7 +205,16 @@ fn syndicate_card(ui: &mut Ui, a: &Affiliation, emblem_url: Option<String>) {
                 }
             }
             ui.label(RichText::new("standing").size(12.0).color(TEXT_MUTED()));
-        });
+        };
+        match daily_left {
+            Some(d) => kit::split_row(ui, standing, |ui| {
+                ui.label(RichText::new("left today").size(12.0).color(TEXT_MUTED()));
+                ui.label(RichText::new(format::int(d.max(0) as u64)).family(theme::body_strong()).color(ACCENT_BRIGHT()));
+            }),
+            None => {
+                ui.horizontal(standing);
+            }
+        }
         kit::progress(ui, frac.clamp(0.0, 1.0), if a.title < 0 { NEGATIVE() } else { ACCENT() }, 6.0);
         ui.add_space(2.0);
         ui.label(RichText::new(note).size(12.0).color(TEXT_MUTED()));
@@ -204,11 +236,12 @@ impl SyndicatesView {
         let mut other: Vec<_> = inv
             .affiliations
             .iter()
-            .filter(|a| !ALIGNED.contains(&a.tag.as_str()) && !OPEN_WORLDS.contains(&a.tag.as_str()) && !a.tag.starts_with("RadioLegion"))
+            .filter(|a| !ALIGNED.contains(&a.tag.as_str()) && !OPEN_WORLDS.contains(&a.tag.as_str()) && !INACTIVE.contains(&a.tag.as_str()) && !a.tag.starts_with("RadioLegion"))
             .collect();
-        for list in [&mut aligned, &mut open, &mut other] {
+        for list in [&mut aligned, &mut other] {
             list.sort_by_key(|a| game_tables::syndicate_label(&a.tag));
         }
+        open.sort_by_key(|a| OPEN_WORLDS.iter().position(|t| *t == a.tag));
         let tabs: Vec<(Tab, String)> = [(Tab::Aligned, "Aligned", &aligned), (Tab::OpenWorlds, "Open worlds", &open), (Tab::Other, "Other", &other)]
             .into_iter()
             .filter(|(_, _, list)| !list.is_empty())
@@ -244,8 +277,11 @@ impl SyndicatesView {
             for row in list.chunks(per_row) {
                 ui.columns(per_row, |cols| {
                     for (col, a) in cols.iter_mut().zip(row) {
-                        let url = db.as_ref().and_then(|db| db.syndicate_emblem_url(&a.tag, a.title));
-                        syndicate_card(col, a, url);
+                        let emblem = crate::assets::syndicate_logo(&a.tag).or_else(|| {
+                            db.as_ref().and_then(|db| db.syndicate_emblem_url(&a.tag)).map(|u| egui::ImageSource::Uri(u.into()))
+                        });
+                        let daily = inv.daily_standing_by_syndicate.get(&a.tag).copied();
+                        syndicate_card(col, a, emblem, daily);
                     }
                 });
                 ui.add_space(8.0);
