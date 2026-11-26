@@ -165,6 +165,47 @@ pub fn syndicate_label(tag: &str) -> String {
     label.to_string()
 }
 
+/// The sigil (DE uniqueName) that shows a syndicate's emblem at `rank`.
+/// Aligned syndicates and Conclave have one base emblem; open-world syndicates
+/// have a sigil per rank (shown from rank 1, the first one below that).
+/// `None` for syndicates without one (events, journals).
+pub fn syndicate_emblem(tag: &str, rank: i64) -> Option<String> {
+    const SIGILS: &str = "/Lotus/Upgrades/Skins/Sigils/";
+    if matches!(tag, "LibrarySyndicate" | "CephalonSimarisSyndicate") {
+        // "Cephalon Simaris Sigil" (the wiki's name), the Sanctuary Warden.
+        return Some(format!("{SIGILS}CollectorSigil"));
+    }
+    let base = match tag {
+        "ArbitersSyndicate" => "ArbitersOfHexis",
+        "CephalonSudaSyndicate" => "CephalonSuda",
+        "NewLokaSyndicate" => "NewLoka",
+        "PerrinSyndicate" => "PerrinSequence",
+        "RedVeilSyndicate" => "RedVeil",
+        "SteelMeridianSyndicate" => "SteelMeridian",
+        "ConclaveSyndicate" => "Conclave",
+        _ => "",
+    };
+    if !base.is_empty() {
+        return Some(format!("{SIGILS}SyndicateSigil{base}A"));
+    }
+    let (family, top) = match tag {
+        "CetusSyndicate" => ("Ostron", 5),
+        "QuillsSyndicate" => ("Quills", 5),
+        "SolarisSyndicate" => ("Solaris", 5),
+        "VentKidsSyndicate" => ("Ventkids", 5),
+        "VoxSyndicate" => ("Vox", 5),
+        "EntratiSyndicate" => ("Entrati", 5),
+        "NecraloidSyndicate" => ("Necraloid", 3),
+        "ZarimanSyndicate" => ("Holdfasts", 5),
+        "EntratiLabSyndicate" => ("Cavia", 5),
+        "HexSyndicate" => ("Hex", 5),
+        "KahlSyndicate" => return Some(format!("{SIGILS}KahlSupporterPackSigil")),
+        _ => return None,
+    };
+    let word = ["One", "Two", "Three", "Four", "Five"][(rank.clamp(1, top) - 1) as usize];
+    Some(format!("{SIGILS}Syndicate/{family}Rank{word}"))
+}
+
 /// Every stat DE's riven tables can roll (ExportUpgrades, 2026-11), including
     /// the combined elements, newer factions and newer gun/melee stats.
 pub const RIVEN_STAT_TAGS: [&str; 54] = [
@@ -305,6 +346,16 @@ pub fn split_camel(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn syndicate_emblems() {
+        assert_eq!(syndicate_emblem("RedVeilSyndicate", 3).as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/SyndicateSigilRedVeilA"));
+        assert_eq!(syndicate_emblem("CetusSyndicate", 0).as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/Syndicate/OstronRankOne"));
+        assert_eq!(syndicate_emblem("NecraloidSyndicate", 5).as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/Syndicate/NecraloidRankThree"));
+        assert_eq!(syndicate_emblem("LibrarySyndicate", 0).as_deref(), Some("/Lotus/Upgrades/Skins/Sigils/CollectorSigil"));
+        assert_eq!(syndicate_emblem("EventSyndicate", 5), None);
+    }
+
     use super::*;
 
     #[test]

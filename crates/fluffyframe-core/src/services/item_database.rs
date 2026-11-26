@@ -298,6 +298,9 @@ pub struct ItemDb {
     pub regions: HashMap<String, Region>,
     /// Riven stat tables and weapon dispositions.
     pub rivens: super::riven_data::RivenTables,
+    /// Sigil uniqueName → texture. Sigils aren't items here (ExportFlavour isn't
+    /// downloaded), but syndicate emblems are sigils.
+    sigil_textures: HashMap<String, String>,
 }
 
 /// "<ARCHWING> Odonata Prime" → "Odonata Prime".
@@ -381,6 +384,11 @@ impl ItemDb {
             .array("ExportManifest", "Manifest")
             .iter()
             .filter_map(|v| Some((v.get("uniqueName")?.as_str()?, v.get("textureLocation")?.as_str()?)))
+            .collect();
+        db.sigil_textures = textures
+            .iter()
+            .filter(|(u, _)| u.starts_with("/Lotus/Upgrades/Skins/Sigils/"))
+            .map(|(u, t)| (u.to_string(), t.to_string()))
             .collect();
 
         let add = |v: &Value, kind: ItemKind, db: &mut ItemDb| {
@@ -630,6 +638,12 @@ impl ItemDb {
         super::wiki_art::card_art_url(unique, info.map(|i| i.name.as_str()).unwrap_or(""), card).or_else(|| {
             info.and_then(|i| i.texture.as_deref()).map(|t| format!("{PUBLIC_EXPORT_IMAGE_BASE}{t}"))
         })
+    }
+
+    /// Emblem image for a syndicate at `rank` (see [`game_tables::syndicate_emblem`]).
+    pub fn syndicate_emblem_url(&self, tag: &str, rank: i64) -> Option<String> {
+        let sigil = crate::config::game_tables::syndicate_emblem(tag, rank)?;
+        self.sigil_textures.get(&sigil).map(|t| format!("{PUBLIC_EXPORT_IMAGE_BASE}{t}"))
     }
 
     pub fn recipe_for_result(&self, result: &str) -> Option<&Recipe> {
