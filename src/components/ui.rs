@@ -209,11 +209,13 @@ pub struct GridSection<'a> {
     gap: f32,
     n: usize,
     add: CellFn<'a>,
+    /// Cell to keep in view when the grid reflows (see [`GridSection::reveal`]).
+    reveal: Option<usize>,
 }
 
 impl<'a> GridSection<'a> {
     pub fn new(min_width: f32, height: f32, n: usize, add: impl FnMut(&mut Ui, usize) + 'a) -> Self {
-        Self { title: None, min_width, height, height_of: None, aspect: None, gap: 12.0, n, add: Box::new(add) }
+        Self { title: None, min_width, height, height_of: None, aspect: None, gap: 12.0, n, add: Box::new(add), reveal: None }
     }
 
     /// Cells keep a shape: height = `min(cell width, max_width) × ratio`.
@@ -238,12 +240,27 @@ impl<'a> GridSection<'a> {
         self.gap = gap;
         self
     }
+
+    /// Keep cell `i` in view when the grid's width changes (a side panel opens
+    /// or closes, the window resizes): its cards reflow, and the grid scrolls
+    /// just enough to bring the cell to the nearer edge.
+    pub fn reveal(mut self, i: Option<usize>) -> Self {
+        self.reveal = i.filter(|i| *i < self.n);
+        self
+    }
 }
 
 /// Grids stacked in one scroll area; only visible cells are built.
 pub fn grid_sections(ui: &mut Ui, mut sections: Vec<GridSection<'_>>) {
     const TITLE_H: f32 = 34.0;
     let avail = ui.available_width() - 14.0;
+    // Width last frame: a change means the cells reflowed (see `reveal`).
+    // Keyed on the container, not an auto id: a panel opening adds widgets
+    // before the grid and would shift that.
+    let width_id = ui.scope_id().with("grid-width");
+    let last_width: Option<f32> = ui.data(|d| d.get_temp(width_id));
+    ui.data_mut(|d| d.insert_temp(width_id, avail));
+    let reflowed = last_width.is_some_and(|w| (w - avail).abs() > 0.5);
     egui::ScrollArea::vertical().auto_shrink(false).show_viewport(ui, |ui, viewport| {
         let origin = ui.max_rect().min;
         let mut y = 0.0;
@@ -276,6 +293,13 @@ pub fn grid_sections(ui: &mut Ui, mut sections: Vec<GridSection<'_>>) {
                 top += h + s.gap;
             }
             tops.push(top);
+            if reflowed && let Some(i) = s.reveal {
+                let (row, col) = (i / cols, i % cols);
+                let min = origin + vec2(col as f32 * (width + s.gap), y + tops[row]);
+                let rect = egui::Rect::from_min_size(min, vec2(width, tops[row + 1] - tops[row] - s.gap));
+                // No alignment: the least scroll that shows it (top or bottom edge).
+                ui.scroll_to_rect(rect, None);
+            }
             let first = tops.partition_point(|t| y + t <= viewport.min.y).saturating_sub(1);
             let last = tops.partition_point(|t| y + t < viewport.max.y).min(rows);
             for row in first..last {

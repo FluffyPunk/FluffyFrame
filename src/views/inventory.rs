@@ -240,6 +240,16 @@ fn resource_tile(ui: &mut Ui, r: &InventoryRow) -> bool {
     .clicked()
 }
 
+/// A seller's status in the order list: a small outlined capsule, lighter than
+/// `kit::pill` so the user name keeps its room (original: `.order-vis`).
+fn status_pill(ui: &mut Ui, text: &str, color: egui::Color32) {
+    egui::Frame::new()
+        .stroke(Stroke::new(1.0, alpha(color, 0.6)))
+        .corner_radius(8)
+        .inner_margin(Margin::symmetric(5, 0))
+        .show(ui, |ui| ui.label(RichText::new(text).size(9.0).color(color)));
+}
+
 impl InventoryView {
     /// Market items in view. Resources get their own tile section ([`Self::resources`]).
     fn filtered<'a>(&self, state: &'a AppState) -> Vec<&'a InventoryRow> {
@@ -420,6 +430,8 @@ impl InventoryView {
         let mut clicked: Option<usize> = None;
         let mut clicked_resource: Option<usize> = None;
         let mut sections = Vec::new();
+        // The selected item stays in view when the market panel reflows the grid.
+        let reveal = self.selected.as_deref().and_then(|k| rows.iter().position(|r| row_key(r) == k));
         if settings.inventory_rows {
             if !rows.is_empty() {
                 list_header(ui);
@@ -430,7 +442,8 @@ impl InventoryView {
                         clicked = Some(i);
                     }
                 })
-                .gap(0.0),
+                .gap(0.0)
+                .reveal(reveal),
             );
         } else {
             sections.push(
@@ -439,7 +452,8 @@ impl InventoryView {
                         clicked = Some(i);
                     }
                 })
-                .heights(|i| card_height(rows[i])),
+                .heights(|i| card_height(rows[i]))
+                .reveal(reveal),
             );
         }
         let mut resource_section = kit::GridSection::new(208.0, 66.0, resources.len(), |ui, i| {
@@ -690,11 +704,19 @@ impl InventoryView {
         };
         kit::card(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new("Market Listings").font(FontId::new(18.0, theme::display())));
+            // Compact controls, as the original's panel (its buttons are ~12px).
+            {
+                let style = ui.style_mut();
+                style.text_styles.insert(egui::TextStyle::Button, FontId::new(12.5, theme::display()));
+                style.spacing.button_padding = vec2(8.0, 3.0);
+                style.spacing.interact_size.y = 22.0;
+                style.spacing.item_spacing = vec2(6.0, 5.0);
+            }
+            ui.label(RichText::new("Market Listings").font(FontId::new(17.0, theme::display())));
             let slug = row.wfm_slug.clone();
             // The rank toggle overrides a ranked item's default pool.
             let variant = self.rank_view.map_or(row.variant(), Variant::Rank);
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if let Some(slug) = &slug {
                     if kit::ghost_button(ui, "Refresh").clicked() {
                         backend.prices(PriceCmd::Refresh(vec![(slug.clone(), variant)]));
@@ -714,39 +736,46 @@ impl InventoryView {
                     self.selected = None;
                 }
             });
-            ui.add_space(4.0);
+            ui.add_space(2.0);
+
+            // Safe to sell (original: inventory safety rules, simplified), in the
+            // header's subtitle rather than a row of its own.
+            let safe = match (&state.inventory, &state.db) {
+                (Some(inv), Some(db)) => {
+                    let needed: u64 = inv
+                        .items
+                        .iter()
+                        .filter(|i| i.collection == "Recipes")
+                        .filter_map(|i| db.recipes.get(&i.unique_name).map(|r| (r, i.count)))
+                        .flat_map(|(r, n)| r.ingredients.iter().filter(|g| g.item_type == row.unique_name).map(move |g| g.count as u64 * n))
+                        .sum();
+                    let reserved = needed + keep_spare as u64;
+                    Some((row.count.saturating_sub(reserved), reserved, needed))
+                }
+                _ => None,
+            };
             ui.horizontal(|ui| {
                 egui::Frame::new().fill(BG_WELL()).corner_radius(RADIUS_SM()).inner_margin(Margin::same(3)).show(ui, |ui| {
-                    kit::remote_image(ui, row.image_url.as_deref(), vec2(46.0, 46.0));
+                    kit::remote_image(ui, row.image_url.as_deref(), vec2(40.0, 40.0));
                 });
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(&row.name).family(theme::body_strong()).size(15.0));
-                    let label = variant.label();
-                    let view = if label.is_empty() { label } else { format!(" · Viewing {label}") };
-                    ui.label(RichText::new(format!("x{} · {}{view}", row.count, row.kind.label())).size(12.0).color(TEXT_MUTED()));
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.add(egui::Label::new(RichText::new(&row.name).family(theme::body_strong()).size(14.0)).truncate());
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        let label = variant.label();
+                        let view = if label.is_empty() { label } else { format!(" · Viewing {label}") };
+                        ui.label(RichText::new(format!("x{} · {}{view}", row.count, row.kind.label())).size(11.5).color(TEXT_MUTED()));
+                        if let Some((safe, reserved, needed)) = safe {
+                            ui.label(RichText::new(" · ").size(11.5).color(TEXT_MUTED()));
+                            let resp = ui.label(RichText::new(format!("{safe} safe to sell")).size(11.5).color(if safe > 0 { POSITIVE() } else { WARNING() }));
+                            if reserved > 0 {
+                                resp.on_hover_text(format!("{reserved} reserved: owned blueprints need {needed}; {keep_spare} spare copies kept"));
+                            }
+                        }
+                    });
                 });
             });
-
-            // Safe to sell (original: inventory safety rules, simplified).
-            if let (Some(inv), Some(db)) = (&state.inventory, &state.db) {
-                let needed: u64 = inv
-                    .items
-                    .iter()
-                    .filter(|i| i.collection == "Recipes")
-                    .filter_map(|i| db.recipes.get(&i.unique_name).map(|r| (r, i.count)))
-                    .flat_map(|(r, n)| r.ingredients.iter().filter(|g| g.item_type == row.unique_name).map(move |g| g.count as u64 * n))
-                    .sum();
-                let reserved = needed + keep_spare as u64;
-                let safe = row.count.saturating_sub(reserved);
-                ui.horizontal(|ui| {
-                    kit::caption(ui, "Safe to sell");
-                    ui.label(RichText::new(safe.to_string()).family(theme::body_strong()).color(if safe > 0 { POSITIVE() } else { WARNING() }));
-                    if reserved > 0 {
-                        ui.label(RichText::new(format!("{reserved} reserved")).size(11.5).color(TEXT_MUTED()))
-                            .on_hover_text(format!("Owned blueprints need {needed}; {keep_spare} spare copies kept"));
-                    }
-                });
-            }
 
             let Some(slug) = slug else {
                 ui.label(RichText::new("Not tradable on warframe.market.").color(TEXT_MUTED()));
@@ -765,49 +794,64 @@ impl InventoryView {
             // Per unit: a bulk order's platinum buys a whole batch.
             let best_wts = book.as_ref().and_then(|b| b.sell.iter().filter(online).map(|o| o.unit_price()).min_by(f64::total_cmp));
             let best_wtb = book.as_ref().and_then(|b| b.buy.iter().filter(online).map(|o| o.unit_price()).max_by(f64::total_cmp));
-            ui.add_space(6.0);
+            ui.add_space(2.0);
             ui.columns(3, |cols| {
                 let tile = |ui: &mut Ui, label: &str, v: Option<String>, color: egui::Color32| {
-                    kit::raised(ui, |ui| {
+                    egui::Frame::new().fill(BG_RAISED()).stroke(Stroke::new(1.0, BORDER())).corner_radius(RADIUS_SM()).inner_margin(Margin::symmetric(8, 5)).show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        kit::caption(ui, label);
-                        ui.label(RichText::new(v.unwrap_or("-".into())).family(theme::body_strong()).color(color));
+                        ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.label(RichText::new(label.to_uppercase()).size(10.5).color(TEXT_MUTED()));
+                        ui.label(RichText::new(v.unwrap_or("-".into())).family(theme::body_strong()).size(13.0).color(color));
                     });
                 };
-                tile(&mut cols[0], "Best WTS", best_wts.map(plat_text), ACCENT_BRIGHT());
-                tile(&mut cols[1], "Best WTB", best_wtb.map(plat_text), INFO());
+                tile(&mut cols[0], "Best WTS", best_wts.map(plat_text), POSITIVE());
+                tile(&mut cols[1], "Best WTB", best_wtb.map(plat_text), NEGATIVE());
                 let spread = best_wts.zip(best_wtb).map(|(s, b)| plat_text(s - b));
                 tile(&mut cols[2], "Spread", spread, TEXT());
             });
-            ui.add_space(4.0);
-            ui.checkbox(&mut self.online_only, "Online/In-game only");
-            if let Some(max) = row.max_rank.filter(|m| *m > 0) {
-                ui.horizontal(|ui| {
-                    kit::caption(ui, "Rank view");
+
+            // Filters in one box (original: online toggle, rank view, two sorts).
+            egui::Frame::new().stroke(Stroke::new(1.0, BORDER())).corner_radius(RADIUS_SM()).inner_margin(Margin::same(8)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.checkbox(&mut self.online_only, RichText::new("Online/In-game only").size(12.0));
+                let caption = |ui: &mut Ui, t: &str| {
+                    ui.label(RichText::new(t).size(10.5).color(TEXT_MUTED()));
+                };
+                if let Some(max) = row.max_rank.filter(|m| *m > 0) {
+                    caption(ui, "RANK VIEW");
                     let mut r = if let Variant::Rank(r) = variant { r } else { 0 };
-                    if kit::segmented(ui, &mut r, &[(0, "R0"), (max, &format!("R{max}"))]) {
+                    let before = r;
+                    egui::ComboBox::from_id_salt("rank-view").width(ui.available_width()).selected_text(RichText::new(format!("R{r}")).size(12.0)).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut r, 0, "R0");
+                        ui.selectable_value(&mut r, max, format!("R{max}"));
+                    });
+                    if r != before {
                         self.rank_view = Some(r);
                         backend.market(MarketCmd::TopOrders { slug: slug.clone(), variant: Variant::Rank(r) });
                         backend.prices(PriceCmd::Request(vec![(slug.clone(), Variant::Rank(r))]));
                     }
+                }
+                ui.columns(2, |cols| {
+                    for (i, (title, id, best)) in [("WTS SORT", "wts-sort", "Best price"), ("WTB SORT", "wtb-sort", "Best offer")].into_iter().enumerate() {
+                        let ui = &mut cols[i];
+                        caption(ui, title);
+                        let by_rep = if i == 0 { &mut self.sort_by_reputation.0 } else { &mut self.sort_by_reputation.1 };
+                        egui::ComboBox::from_id_salt(id).width(ui.available_width()).selected_text(RichText::new(if *by_rep { "Reputation" } else { best }).size(12.0)).show_ui(ui, |ui| {
+                            ui.selectable_value(by_rep, false, best);
+                            ui.selectable_value(by_rep, true, "Reputation");
+                        });
+                    }
                 });
-            }
-            ui.horizontal(|ui| {
-                kit::caption(ui, "WTS sort");
-                kit::segmented(ui, &mut self.sort_by_reputation.0, &[(false, "Best price"), (true, "Reputation")]);
             });
-            ui.horizontal(|ui| {
-                kit::caption(ui, "WTB sort");
-                kit::segmented(ui, &mut self.sort_by_reputation.1, &[(false, "Best offer"), (true, "Reputation")]);
-            });
-            ui.add_space(4.0);
+
             ui.columns(2, |cols| {
                 for (i, (label, color, kind)) in [("Post WTS", POSITIVE(), OrderType::Sell), ("Post WTB", NEGATIVE(), OrderType::Buy)].into_iter().enumerate() {
-                    let btn = egui::Button::new(RichText::new(label).color(color))
+                    let btn = egui::Button::new(RichText::new(label).size(12.5).color(color))
                         .fill(alpha(color, 0.12))
-                        .stroke(Stroke::new(1.0, color))
-                        .min_size(vec2(cols[i].available_width(), 30.0));
-                    if cols[i].add(btn).clicked()
+                        .stroke(Stroke::new(1.0, color));
+                    // add_sized centers the label (min_size alone leaves it left).
+                    let w = cols[i].available_width();
+                    if cols[i].add_sized([w, 26.0], btn).clicked()
                         && let Some(item) = state.catalog.as_ref().and_then(|c| c.by_slug(&slug))
                     {
                         let suggested = match kind {
@@ -825,7 +869,6 @@ impl InventoryView {
                     }
                 }
             });
-            ui.add_space(6.0);
             if book.is_none() {
                 ui.horizontal(|ui| {
                     ui.spinner();
@@ -839,53 +882,58 @@ impl InventoryView {
                         ("WTS", &sells, book.as_ref().map(|b| b.sell.len()).unwrap_or(0), POSITIVE()),
                         ("WTB", &buys, book.as_ref().map(|b| b.buy.len()).unwrap_or(0), NEGATIVE()),
                     ]) {
+                        ui.spacing_mut().item_spacing.y = 0.0;
                         egui::Frame::new().fill(alpha(color, 0.10)).stroke(Stroke::new(1.0, alpha(color, 0.4))).corner_radius(RADIUS_SM()).inner_margin(Margin::same(4)).show(ui, |ui| {
                             ui.set_width(ui.available_width());
-                            ui.vertical_centered(|ui| ui.label(RichText::new(title).family(theme::body_strong()).color(color)));
+                            ui.vertical_centered(|ui| ui.label(RichText::new(title).family(theme::body_strong()).size(12.5).color(color)));
                         });
                         if list.is_empty() {
                             let hidden = total.saturating_sub(list.len());
-                            ui.label(RichText::new(if title == "WTS" { "No sell orders" } else { "No buy orders" }).size(12.0).color(TEXT_MUTED()));
+                            ui.add_space(6.0);
+                            ui.label(RichText::new(if title == "WTS" { "No sell orders" } else { "No buy orders" }).size(11.5).color(TEXT_MUTED()));
                             if hidden > 0 {
-                                ui.label(RichText::new(format!("{hidden} offline, hidden by the filter")).size(11.5).color(TEXT_MUTED()));
+                                ui.label(RichText::new(format!("{hidden} offline, hidden by the filter")).size(11.0).color(TEXT_MUTED()));
                             }
                         }
                         for o in list.iter().take(15) {
-                            egui::Frame::new().stroke(Stroke::new(1.0, BORDER())).corner_radius(RADIUS_SM()).inner_margin(Margin::same(6)).show(ui, |ui| {
+                            egui::Frame::new().stroke(Stroke::new(1.0, BORDER())).inner_margin(Margin::symmetric(6, 5)).show(ui, |ui| {
                                 ui.set_width(ui.available_width());
-                                ui.horizontal(|ui| {
-                                    ui.add(egui::Label::new(RichText::new(o.user_name.as_deref().unwrap_or("?")).size(12.5)).truncate());
-                                });
-                                ui.horizontal(|ui| {
-                                    let (st, sc) = match o.user_status.as_deref() {
-                                        Some("ingame") => ("In game", POSITIVE()),
-                                        Some("online") => ("Online", INFO()),
-                                        _ => ("Offline", TEXT_MUTED()),
-                                    };
-                                    kit::pill(ui, st, sc);
-                                    ui.label(RichText::new(format!("x{}", o.quantity)).size(11.5).color(TEXT_MUTED()));
-                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.label(RichText::new(o.price_text()).family(theme::body_strong()).color(ACCENT_BRIGHT()))
+                                ui.spacing_mut().item_spacing.y = 3.0;
+                                // Name, then status, quantity and price on one line.
+                                kit::split_row(
+                                    ui,
+                                    |ui| {
+                                        ui.label(RichText::new(o.user_name.as_deref().unwrap_or("?")).size(12.0));
+                                    },
+                                    |ui| {
+                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                        ui.label(RichText::new(o.price_text()).family(theme::body_strong()).size(12.0).color(ACCENT_BRIGHT()))
                                             .on_hover_text(if o.per_trade > 1 { format!("{}p per {} ({:.2}p each)", o.platinum, o.per_trade, o.unit_price()) } else { String::new() });
-                                    });
-                                });
+                                        ui.label(RichText::new(format!("x{}", o.quantity)).size(11.0).color(TEXT_MUTED()));
+                                        let (st, sc) = match o.user_status.as_deref() {
+                                            Some("ingame") => ("IN GAME", POSITIVE()),
+                                            Some("online") => ("ONLINE", INFO()),
+                                            _ => ("OFFLINE", TEXT_MUTED()),
+                                        };
+                                        status_pill(ui, st, sc);
+                                    },
+                                );
                                 if let Some(r) = o.rank {
-                                    ui.label(RichText::new(format!("R{r}")).size(11.0).color(TEXT_MUTED()));
+                                    ui.label(RichText::new(format!("R{r}")).size(10.5).color(TEXT_MUTED()));
                                 }
                                 ui.columns(2, |c| {
                                     if let Some(w) = o.whisper(&row.name)
-                                        && c[0].add_sized([c[0].available_width(), 22.0], egui::Button::new(RichText::new("Whisper").size(12.0))).on_hover_text(&w).clicked()
+                                        && c[0].add_sized([c[0].available_width(), 20.0], egui::Button::new(RichText::new("Whisper").size(11.5))).on_hover_text(&w).clicked()
                                     {
                                         c[0].ctx().copy_text(w);
                                     }
                                     if let Some(url) = o.profile_url()
-                                        && c[1].add_sized([c[1].available_width(), 22.0], egui::Button::new(RichText::new("Profile").size(12.0))).clicked()
+                                        && c[1].add_sized([c[1].available_width(), 20.0], egui::Button::new(RichText::new("Profile").size(11.5))).clicked()
                                     {
                                         c[1].ctx().open_url(egui::OpenUrl::new_tab(url));
                                     }
                                 });
                             });
-                            ui.add_space(3.0);
                         }
                     }
                 });
@@ -1102,7 +1150,8 @@ impl InventoryView {
                 clicked = Some(i);
             }
         });
-        cards = cards.heights(|i| heights[i]);
+        let reveal = selected.as_deref().and_then(|k| sets.iter().position(|s| set_key(&s.result) == k));
+        cards = cards.heights(|i| heights[i]).reveal(reveal);
         kit::grid_sections(ui, vec![cards]);
 
         // Keep the open panel in step with the inventory: new counts after a
