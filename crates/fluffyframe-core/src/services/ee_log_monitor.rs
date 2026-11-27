@@ -4,6 +4,7 @@
 //! completed trades and mission ends. Reward-screen and relic-picker triggers fed
 //! the overlays, which are not ported, so they are not detected here.
 
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -325,6 +326,50 @@ impl LineParser {
     }
 }
 
+/// Lines already handled from the game's debug output (Windows), so EE.log's
+/// copy of them, written seconds later, is skipped. Lines the capture missed
+/// (before it started, or while another program held it) still come from
+/// EE.log. Counted, for lines that repeat word for word. Empty elsewhere:
+/// only Windows has the capture.
+#[derive(Default)]
+#[cfg_attr(not(windows), allow(dead_code))]
+struct Seen {
+    counts: HashMap<String, u32>,
+    order: VecDeque<String>,
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl Seen {
+    /// Lines remembered at most: well over what EE.log lags behind by.
+    const MAX: usize = 20_000;
+
+    fn add(&mut self, line: &str) {
+        *self.counts.entry(line.to_string()).or_default() += 1;
+        self.order.push_back(line.to_string());
+        while self.order.len() > Self::MAX {
+            let old = self.order.pop_front().expect("longer than MAX");
+            self.forget(&old);
+        }
+    }
+
+    /// Whether `line` was seen already (and counts it off). Its entry in
+    /// `order` just ages out; forgetting a line no longer counted is a no-op.
+    fn take(&mut self, line: &str) -> bool {
+        let seen = self.counts.contains_key(line);
+        self.forget(line);
+        seen
+    }
+
+    fn forget(&mut self, line: &str) {
+        if let Some(n) = self.counts.get_mut(line) {
+            *n -= 1;
+            if *n == 0 {
+                self.counts.remove(line);
+            }
+        }
+    }
+}
+
 pub struct MonitorHandle {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
@@ -355,11 +400,21 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
     let mut offset = 0u64;
     let mut remainder = String::new();
     let mut parser = LineParser::default();
+    let mut seen = Seen::default();
+    #[cfg(windows)]
+    let capture = super::debug_output::Capture::start();
+    // The game's process, whose debug output is its log.
+    #[cfg(windows)]
+    let mut game_pid: Option<u32> = None;
     let mut ticks_since_resolve = u32::MAX;
     while !stop.load(Ordering::Relaxed) {
         // Re-resolve every ~10 s: the newest log wins when several prefixes exist.
         if ticks_since_resolve >= 20 {
             ticks_since_resolve = 0;
+            #[cfg(windows)]
+            {
+                game_pid = wf_api::game_pid();
+            }
             let found = ee_log_path::resolve(override_path.as_deref());
             if found != path {
                 offset = found.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()).unwrap_or(0);
@@ -401,7 +456,10 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
                 let mut events = Vec::new();
                 while let Some(nl) = remainder.find('\n') {
                     let line: String = remainder.drain(..=nl).collect();
-                    parser.handle(line.trim_end_matches(['\n', '\r']), &mut events);
+                    let line = line.trim_end_matches(['\n', '\r']);
+                    if !seen.take(line) {
+                        parser.handle(line, &mut events);
+                    }
                 }
                 for e in events {
                     if tx.send(e).is_err() {
@@ -410,8 +468,38 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
                 }
             }
         }
+        // Between EE.log checks: the game's live debug output where there is
+        // one (handled as it comes), else just the pause.
+        #[cfg(windows)]
+        if let Some(capture) = &capture {
+            let until = std::time::Instant::now() + EE_LOG_POLL;
+            while let Some(wait) = until.checked_duration_since(std::time::Instant::now()) {
+                let Ok((pid, text)) = capture.recv(wait) else { break };
+                if Some(pid) != game_pid {
+                    continue;
+                }
+                let mut events = Vec::new();
+                for line in debug_lines(&text) {
+                    seen.add(line);
+                    parser.handle(line, &mut events);
+                }
+                for e in events {
+                    if tx.send(e).is_err() {
+                        return;
+                    }
+                }
+            }
+            continue;
+        }
         std::thread::sleep(EE_LOG_POLL);
     }
+}
+
+/// One debug string's lines, as EE.log splits them (a dialog's text spans
+/// several, each ending in `\n`).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn debug_lines(text: &str) -> impl Iterator<Item = &str> {
+    text.split('\n').map(|l| l.trim_end_matches('\r')).filter(|l| !l.is_empty())
 }
 
 #[cfg(test)]
@@ -428,6 +516,34 @@ mod tests {
         std::fs::write(&log, b"1.0 Sys [Info]: boot\n2.0 Sys [Info]: Logged in Tenno\r\n").unwrap();
         assert_eq!(catch_up(&log), (false, Some("Tenno".into())));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_debug_outputs_lines_are_skipped_in_ee_log() {
+        let mut seen = Seen::default();
+        let text = "45.236 Script [Info]: Dialog.lua: Dialog::SendResult(4)\nPlatinum x 45\nPlatinum x 45\n";
+        for line in debug_lines(text) {
+            seen.add(line);
+        }
+        // EE.log's copy arrives later: each line once, repeats counted.
+        assert!(seen.take("45.236 Script [Info]: Dialog.lua: Dialog::SendResult(4)"));
+        assert!(seen.take("Platinum x 45"));
+        assert!(seen.take("Platinum x 45"));
+        assert!(!seen.take("Platinum x 45"));
+        // A line the capture missed still counts.
+        assert!(!seen.take("50.000 Sys [Info]: OnInventoryResults completed in 71ms"));
+        assert!(seen.counts.is_empty());
+    }
+
+    #[test]
+    fn remembers_a_bounded_number_of_lines() {
+        let mut seen = Seen::default();
+        for i in 0..Seen::MAX + 5 {
+            seen.add(&format!("{i} Sys [Info]: line"));
+        }
+        assert_eq!(seen.order.len(), Seen::MAX);
+        assert!(!seen.take("0 Sys [Info]: line"), "the oldest are forgotten");
+        assert!(seen.take(&format!("{} Sys [Info]: line", Seen::MAX + 4)));
     }
 
     #[test]
