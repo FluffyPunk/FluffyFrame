@@ -100,6 +100,11 @@ pub fn next_delay(result: Result<(), RunFailure>, interval: Duration) -> Duratio
     }
 }
 
+/// Whether Warframe is running (its process exists, logged in or not).
+pub fn game_running() -> bool {
+    wf_api::game_pid().is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

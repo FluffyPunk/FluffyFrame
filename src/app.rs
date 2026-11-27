@@ -42,6 +42,10 @@ impl FluffyFrameApp {
 }
 
 impl eframe::App for FluffyFrameApp {
+    fn on_exit(&mut self) {
+        self.backend.on_exit();
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         crate::image_loader::release_evicted(ctx);
         while let Ok(event) = self.backend.events.try_recv() {

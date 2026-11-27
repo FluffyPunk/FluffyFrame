@@ -91,6 +91,9 @@ pub struct Settings {
     pub keep_spare_copies: u32,
 
     pub wfm_email: Option<String>,
+    /// warframe.market status "In game" from logging in to Warframe until it
+    /// closes (then put back), and "Invisible" when the app quits.
+    pub wfm_auto_status: bool,
 }
 
 impl Default for Settings {
@@ -122,6 +125,7 @@ impl Default for Settings {
             value_min_plat: 0,
             keep_spare_copies: 0,
             wfm_email: None,
+            wfm_auto_status: true,
         }
     }
 }

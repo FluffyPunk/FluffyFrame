@@ -19,6 +19,12 @@ pub enum MarketCmd {
     DeleteOrder(String),
     RivenWeapons,
     RivenAuctions(String),
+    /// List one of the user's rivens (direct sale or auction).
+    CreateRivenAuction(Box<wfm_riven_search::RivenListing>),
+    /// The user's open riven listings.
+    MyAuctions,
+    UpdateAuction { auction: Box<wfm_riven_search::RivenAuction>, price: u32, visible: bool },
+    CloseAuction(String),
 }
 
 pub fn top_orders_key(slug: &str, variant: Variant) -> String {
@@ -41,6 +47,7 @@ pub fn run(emitter: Emitter, rx: Receiver<MarketCmd>) {
                     );
                     emitter.emit(Event::Session(Some(session)));
                     refresh_orders(&emitter);
+                    refresh_auctions(&emitter);
                 }
                 Err(e) => emitter.toast(ToastKind::Error, e.to_string()),
             },
@@ -48,6 +55,7 @@ pub fn run(emitter: Emitter, rx: Receiver<MarketCmd>) {
                 wfm_client::sign_out();
                 emitter.emit(Event::Session(None));
                 emitter.emit(Event::MyOrders(Vec::new()));
+                emitter.emit(Event::MyAuctions(Vec::new()));
             }
             MarketCmd::MyOrders => refresh_orders(&emitter),
             MarketCmd::CreateOrders(orders) => {
@@ -86,7 +94,43 @@ pub fn run(emitter: Emitter, rx: Receiver<MarketCmd>) {
                 Ok(auctions) => emitter.emit(Event::RivenAuctions { slug, auctions }),
                 Err(e) => emitter.toast(ToastKind::Error, format!("Riven search failed: {e}")),
             },
+            MarketCmd::CreateRivenAuction(listing) => match wfm_riven_search::create_auction(&listing) {
+                Ok(_) => {
+                    let what = if matches!(listing.kind, wfm_riven_search::ListingKind::Direct { .. }) { "for sale" } else { "for auction" };
+                    emitter.toast(ToastKind::Success, format!("Riven listed {what} on warframe.market"));
+                    // The similar-listings panel then shows it too.
+                    if let Ok(auctions) = wfm_riven_search::search_auctions(&listing.weapon_slug) {
+                        emitter.emit(Event::RivenAuctions { slug: listing.weapon_slug.clone(), auctions });
+                    }
+                    refresh_auctions(&emitter);
+                }
+                Err(e) => emitter.toast(ToastKind::Error, format!("Listing failed: {e}")),
+            },
+            MarketCmd::MyAuctions => refresh_auctions(&emitter),
+            MarketCmd::UpdateAuction { auction, price, visible } => {
+                match wfm_riven_search::update_auction(&auction, price, visible) {
+                    Ok(()) => emitter.toast(ToastKind::Success, "Contract updated"),
+                    Err(e) => emitter.toast(ToastKind::Error, format!("Update failed: {e}")),
+                }
+                refresh_auctions(&emitter);
+            }
+            MarketCmd::CloseAuction(id) => {
+                match wfm_riven_search::close_auction(&id) {
+                    Ok(()) => emitter.toast(ToastKind::Success, "Contract removed"),
+                    Err(e) => emitter.toast(ToastKind::Error, format!("Remove failed: {e}")),
+                }
+                refresh_auctions(&emitter);
+            }
         }
+    }
+}
+
+/// The user's open riven listings, by their warframe.market profile.
+fn refresh_auctions(emitter: &Emitter) {
+    let Some(profile) = wfm_client::session().and_then(|s| s.slug.or(s.ingame_name)) else { return };
+    match wfm_riven_search::my_auctions(&profile) {
+        Ok(list) => emitter.emit(Event::MyAuctions(list)),
+        Err(e) => emitter.toast(ToastKind::Error, format!("Could not load your riven contracts: {e}")),
     }
 }
 

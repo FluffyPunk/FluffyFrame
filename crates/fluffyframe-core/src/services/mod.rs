@@ -34,6 +34,7 @@ pub mod rivens;
 pub mod wfm_catalog;
 pub mod wfm_client;
 pub mod wfm_orders;
+pub mod wfm_presence;
 pub mod wfm_riven_search;
 pub mod wfm_stats_price;
 

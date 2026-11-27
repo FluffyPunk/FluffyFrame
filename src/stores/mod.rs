@@ -60,6 +60,10 @@ pub struct AppState {
     pub stats: StatsHistory,
     pub session: Option<Session>,
     pub my_orders: Vec<Order>,
+    /// The user's open riven listings ("contracts").
+    pub my_auctions: Vec<RivenAuction>,
+    /// warframe.market status (None: signed out or unknown).
+    pub wfm_status: Option<fluffyframe_core::services::wfm_presence::WfmStatus>,
     pub top_orders: HashMap<String, TopOrders>,
     pub riven_weapons: Option<Arc<RivenWeapons>>,
     pub riven_weapons_requested: bool,
@@ -160,6 +164,8 @@ impl AppState {
                 self.top_orders.insert(key, orders);
             }
             Event::MyOrders(o) => self.my_orders = o,
+            Event::MyAuctions(a) => self.my_auctions = a,
+            Event::WfmStatus(s) => self.wfm_status = s,
             Event::Session(s) => self.session = s,
             Event::RivenWeapons(w) => self.riven_weapons = Some(w),
             Event::GoodRolls(g) => self.good_rolls = Some(g),

@@ -85,6 +85,16 @@ pub struct RivenAuction {
     pub attributes: Vec<(String, f64, bool)>,
     /// Fixed-price sale rather than a bidding auction.
     pub direct_sell: bool,
+    pub weapon_slug: String,
+    pub mod_rank: u32,
+    /// Highest bid so far (auctions).
+    pub top_bid: Option<u32>,
+    pub min_reputation: u32,
+    pub note: String,
+    /// Shown in search (the owner can hide it).
+    pub visible: bool,
+    pub private: bool,
+    pub closed: bool,
 }
 
 /// Stats a riven search can filter on: warframe.market name and label, one per
@@ -173,40 +183,242 @@ impl RivenAuction {
 /// Cheapest live auctions for a weapon.
 pub fn search_auctions(weapon_slug: &str) -> crate::Result<Vec<RivenAuction>> {
     let path = format!("/auctions/search?type=riven&weapon_url_name={weapon_slug}&sort_by=price_asc");
-    let json = wfm_client::get(Api::V1, &path)?;
-    let list = json.pointer("/payload/auctions").and_then(Value::as_array).cloned().unwrap_or_default();
-    Ok(list
-        .iter()
-        .filter_map(|a| {
-            let item = a.get("item")?;
-            Some(RivenAuction {
-                id: a.get("id")?.as_str()?.to_string(),
-                buyout: a.get("buyout_price").and_then(Value::as_u64).map(|n| n as u32),
-                starting: a.get("starting_price").and_then(Value::as_u64).map(|n| n as u32),
-                owner: a.pointer("/owner/ingame_name").and_then(Value::as_str).unwrap_or("?").to_string(),
-                owner_status: a.pointer("/owner/status").and_then(Value::as_str).unwrap_or("offline").to_string(),
-                name: item.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
-                rerolls: item.get("re_rolls").and_then(Value::as_u64).unwrap_or(0) as u32,
-                mastery: item.get("mastery_level").and_then(Value::as_u64).unwrap_or(0) as u32,
-                polarity: item.get("polarity").and_then(Value::as_str).unwrap_or("").to_string(),
-                direct_sell: a.get("is_direct_sell").and_then(Value::as_bool).unwrap_or(false),
-                attributes: item
-                    .get("attributes")
-                    .and_then(Value::as_array)
-                    .map(|attrs| {
-                        attrs
-                            .iter()
-                            .filter_map(|x| {
-                                Some((
-                                    x.get("url_name")?.as_str()?.to_string(),
-                                    x.get("value").and_then(Value::as_f64).unwrap_or(0.0),
-                                    x.get("positive").and_then(Value::as_bool).unwrap_or(true),
-                                ))
-                            })
-                            .collect()
+    Ok(parse_auctions(&wfm_client::get(Api::V1, &path)?))
+}
+
+/// `payload.auctions` of a v1 auction listing.
+fn parse_auctions(json: &Value) -> Vec<RivenAuction> {
+    let list = json.pointer("/payload/auctions").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+    list.iter().filter_map(parse_auction).collect()
+}
+
+fn parse_auction(a: &Value) -> Option<RivenAuction> {
+    let item = a.get("item")?;
+    let num = |v: &Value, k: &str| v.get(k).and_then(Value::as_u64).map(|n| n as u32);
+    let text = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let flag = |k: &str, default: bool| a.get(k).and_then(Value::as_bool).unwrap_or(default);
+    Some(RivenAuction {
+        id: a.get("id")?.as_str()?.to_string(),
+        buyout: num(a, "buyout_price"),
+        starting: num(a, "starting_price"),
+        owner: a.pointer("/owner/ingame_name").and_then(Value::as_str).unwrap_or("?").to_string(),
+        owner_status: a.pointer("/owner/status").and_then(Value::as_str).unwrap_or("offline").to_string(),
+        name: text(item, "name"),
+        rerolls: num(item, "re_rolls").unwrap_or(0),
+        mastery: num(item, "mastery_level").unwrap_or(0),
+        polarity: text(item, "polarity"),
+        direct_sell: flag("is_direct_sell", false),
+        attributes: item
+            .get("attributes")
+            .and_then(Value::as_array)
+            .map(|attrs| {
+                attrs
+                    .iter()
+                    .filter_map(|x| {
+                        Some((
+                            x.get("url_name")?.as_str()?.to_string(),
+                            x.get("value").and_then(Value::as_f64).unwrap_or(0.0),
+                            x.get("positive").and_then(Value::as_bool).unwrap_or(true),
+                        ))
                     })
-                    .unwrap_or_default(),
+                    .collect()
             })
+            .unwrap_or_default(),
+        weapon_slug: text(item, "weapon_url_name"),
+        mod_rank: num(item, "mod_rank").unwrap_or(0),
+        top_bid: num(a, "top_bid"),
+        min_reputation: num(a, "minimal_reputation").unwrap_or(0),
+        note: text(a, "note"),
+        visible: flag("visible", true),
+        private: flag("private", false),
+        closed: flag("closed", false),
+    })
+}
+
+/// The signed-in user's open riven listings ("contracts"). `profile` is their
+/// warframe.market slug; signed-in requests also return private ones.
+pub fn my_auctions(profile: &str) -> crate::Result<Vec<RivenAuction>> {
+    let json = wfm_client::request(Api::V1, reqwest::Method::GET, &format!("/profile/{profile}/auctions"), None, true)?;
+    Ok(parse_auctions(&json).into_iter().filter(|a| !a.closed).collect())
+}
+
+impl RivenAuction {
+    /// `PUT /v1/auctions/entry/{id}` body: a new price (a direct sale's price, or
+    /// an auction's starting bid) and visibility, keeping the rest as listed.
+    pub fn update_body(&self, price: u32, visible: bool) -> Value {
+        let (starting, buyout) = if self.direct_sell { (price, Some(price)) } else { (price, self.buyout) };
+        serde_json::json!({
+            "starting_price": starting,
+            // Required: null means no buyout.
+            "buyout_price": buyout.filter(|b| *b > 0),
+            "minimal_reputation": self.min_reputation,
+            "visible": visible,
+            "note": self.note,
         })
-        .collect())
+    }
+}
+
+pub fn update_auction(auction: &RivenAuction, price: u32, visible: bool) -> crate::Result<()> {
+    let path = format!("/auctions/entry/{}", auction.id);
+    wfm_client::request(Api::V1, reqwest::Method::PUT, &path, Some(&auction.update_body(price, visible)), true)?;
+    Ok(())
+}
+
+/// Removes a listing. warframe.market has no delete for auctions: its own
+/// remove button closes them this way.
+pub fn close_auction(id: &str) -> crate::Result<()> {
+    wfm_client::request(Api::V1, reqwest::Method::PUT, &format!("/auctions/entry/{id}/close"), None, true)?;
+    Ok(())
+}
+
+/// How a riven goes up for sale on warframe.market.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListingKind {
+    /// Fixed price: buyout-only (starting price and buyout are the same).
+    Direct { price: u32 },
+    /// Bidding from `starting`, optionally ending early at `buyout`.
+    Auction { starting: u32, buyout: Option<u32>, min_reputation: u32 },
+}
+
+/// One of the user's rivens, ready to list.
+#[derive(Debug, Clone)]
+pub struct RivenListing {
+    pub weapon_slug: String,
+    /// Generated name only ("crita-visicron"), not the weapon.
+    pub name: String,
+    /// (stat tag, card value at `mod_rank`, positive).
+    pub attributes: Vec<(String, f64, bool)>,
+    pub rerolls: u32,
+    pub mastery_level: u32,
+    /// Game polarity (`AP_ATTACK`…).
+    pub polarity: Option<String>,
+    pub mod_rank: u32,
+    pub kind: ListingKind,
+    pub private: bool,
+    pub note: String,
+}
+
+/// warframe.market's riven polarities; it rejects any other value, so an
+/// unknown one becomes madurai (as the original does).
+fn wfm_polarity(polarity: Option<&str>) -> &'static str {
+    match polarity {
+        Some("AP_DEFENSE") => "vazarin",
+        Some("AP_TACTIC") => "naramon",
+        _ => "madurai",
+    }
+}
+
+impl RivenListing {
+    /// `POST /v1/auctions/create` body (original: `createRivenAuction`). Fails on
+    /// a stat warframe.market has no attribute for.
+    pub fn body(&self) -> crate::Result<Value> {
+        let attributes = self
+            .attributes
+            .iter()
+            .map(|(tag, value, positive)| {
+                let url_name = wfm_attribute(tag).ok_or_else(|| anyhow::anyhow!("warframe.market has no attribute for {tag}"))?;
+                Ok(serde_json::json!({ "url_name": url_name, "value": value, "positive": positive }))
+            })
+            .collect::<crate::Result<Vec<Value>>>()?;
+        let (starting, buyout, min_reputation) = match self.kind {
+            ListingKind::Direct { price } => (price, Some(price), 0),
+            ListingKind::Auction { starting, buyout, min_reputation } => (starting, buyout.filter(|b| *b > 0), min_reputation),
+        };
+        let mut body = serde_json::json!({
+            "item": {
+                "type": "riven",
+                "name": self.name.to_lowercase(),
+                "weapon_url_name": self.weapon_slug,
+                "attributes": attributes,
+                "re_rolls": self.rerolls,
+                "mastery_level": self.mastery_level,
+                "polarity": wfm_polarity(self.polarity.as_deref()),
+                "mod_rank": self.mod_rank,
+            },
+            "starting_price": starting,
+            // Required: null means no buyout.
+            "buyout_price": buyout,
+            "minimal_reputation": min_reputation,
+            "private": self.private,
+        });
+        if !self.note.trim().is_empty() {
+            body["note"] = Value::String(self.note.trim().to_string());
+        }
+        Ok(body)
+    }
+}
+
+/// Lists a riven; returns the new auction's id.
+pub fn create_auction(listing: &RivenListing) -> crate::Result<String> {
+    let body = listing.body()?;
+    log::info!("listing riven for {} ({} attributes)", listing.weapon_slug, listing.attributes.len());
+    let data = wfm_client::request(Api::V1, reqwest::Method::POST, "/auctions/create", Some(&body), true)?;
+    Ok(data.pointer("/payload/auction/id").and_then(Value::as_str).unwrap_or_default().to_string())
+}
+
+#[cfg(test)]
+mod listing_tests {
+    use super::*;
+
+    fn listing(kind: ListingKind) -> RivenListing {
+        RivenListing {
+            weapon_slug: "soma".into(),
+            name: "Crita-visicron".into(),
+            attributes: vec![("WeaponCritChanceMod".into(), 164.3, true), ("WeaponRecoilReductionMod".into(), 74.5, false)],
+            rerolls: 12,
+            mastery_level: 16,
+            polarity: Some("AP_TACTIC".into()),
+            mod_rank: 8,
+            kind,
+            private: false,
+            note: " ".into(),
+        }
+    }
+
+    #[test]
+    fn direct_sale_is_buyout_only() {
+        let b = listing(ListingKind::Direct { price: 250 }).body().unwrap();
+        assert_eq!((b["starting_price"].as_u64(), b["buyout_price"].as_u64()), (Some(250), Some(250)));
+        assert_eq!(b["item"]["name"], "crita-visicron");
+        assert_eq!(b["item"]["polarity"], "naramon");
+        assert_eq!(b["item"]["attributes"][0]["url_name"], "critical_chance");
+        assert_eq!(b["item"]["attributes"][1]["positive"], false);
+        assert!(b.get("note").is_none());
+    }
+
+    #[test]
+    fn auction_without_buyout_sends_null() {
+        let b = listing(ListingKind::Auction { starting: 100, buyout: None, min_reputation: 5 }).body().unwrap();
+        assert!(b["buyout_price"].is_null());
+        assert_eq!(b["minimal_reputation"], 5);
+    }
+
+    #[test]
+    fn parses_own_listings() {
+        let json = serde_json::json!({ "payload": { "auctions": [
+            { "id": "a1", "is_direct_sell": true, "buyout_price": 250, "starting_price": 250, "top_bid": null, "visible": false,
+              "private": false, "closed": false, "minimal_reputation": 0, "note": "pm me",
+              "item": { "name": "crita-visicron", "weapon_url_name": "soma", "mod_rank": 8, "re_rolls": 12, "mastery_level": 16,
+                        "polarity": "naramon", "attributes": [{ "url_name": "critical_chance", "value": 164.3, "positive": true }] } },
+            { "id": "a2", "closed": true, "item": { "weapon_url_name": "soma" } },
+        ] } });
+        let list = parse_auctions(&json);
+        assert_eq!(list.len(), 2);
+        let a = &list[0];
+        assert!(a.direct_sell && !a.visible && a.top_bid.is_none());
+        assert_eq!((a.weapon_slug.as_str(), a.mod_rank, a.note.as_str()), ("soma", 8, "pm me"));
+        assert!(list[1].closed);
+        // A direct sale keeps buyout = price; an auction keeps its buyout.
+        let b = a.update_body(300, true);
+        assert_eq!((b["starting_price"].as_u64(), b["buyout_price"].as_u64(), b["visible"].as_bool()), (Some(300), Some(300), Some(true)));
+        let auction = RivenAuction { direct_sell: false, buyout: None, ..a.clone() };
+        assert!(auction.update_body(90, false)["buyout_price"].is_null());
+    }
+
+    #[test]
+    fn unknown_stat_is_refused() {
+        let mut l = listing(ListingKind::Direct { price: 1 });
+        l.attributes.push(("NotAStat".into(), 1.0, true));
+        assert!(l.body().is_err());
+    }
 }

@@ -127,6 +127,16 @@ fn clock(t: chrono::DateTime<chrono::Utc>) -> String {
 }
 
 /// Colored dot and text.
+/// warframe.market status dot: green online, blue in game, grey invisible.
+pub fn wfm_status_color(status: Option<fluffyframe_core::services::wfm_presence::WfmStatus>) -> Color32 {
+    use fluffyframe_core::services::wfm_presence::WfmStatus;
+    match status {
+        Some(WfmStatus::Online) => POSITIVE(),
+        Some(WfmStatus::InGame) => INFO(),
+        Some(WfmStatus::Invisible) | None => TEXT_MUTED(),
+    }
+}
+
 fn status(ui: &mut Ui, dot: Color32, text: String) -> egui::Response {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
@@ -191,7 +201,13 @@ pub fn show(ui: &mut Ui, state: &AppState, backend: &Backend) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).size(11.0).color(Color32::from_gray(90)));
             if let Some(s) = &state.session {
-                ui.label(small(format!("WFM: {}", s.ingame_name.as_deref().unwrap_or("signed in"))));
+                // Right to left: the name, then its status dot before it.
+                let name = ui.label(small(format!("WFM: {}", s.ingame_name.as_deref().unwrap_or("signed in"))));
+                ui.add_space(-6.0);
+                let dot = ui.label(RichText::new("●").size(9.0).color(wfm_status_color(state.wfm_status)));
+                let tip = state.wfm_status.map_or("Status unknown", |s| s.label());
+                name.on_hover_text(tip);
+                dot.on_hover_text(tip);
             }
             let unread = state.history.len();
             ui.label(small(format!("🔔 {unread}"))).on_hover_ui(|ui| {

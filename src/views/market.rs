@@ -2,10 +2,12 @@
 
 use egui::{Align, FontId, Layout, Margin, RichText, Stroke, Ui, vec2};
 use fluffyframe_core::services::wfm_orders::OrderType;
+use fluffyframe_core::services::wfm_presence as rivens_presence;
+use fluffyframe_core::services::wfm_riven_search as rivens_wfm;
 use fluffyframe_core::services::wfm_stats_price::price_key;
 
 use crate::components::{ui as kit, widgets};
-use crate::ipc::{Backend, MarketCmd, PriceCmd};
+use crate::ipc::{Backend, MarketCmd, PresenceCmd, PriceCmd};
 use crate::stores::{self, AppState};
 use crate::theme::{self, *};
 
@@ -14,6 +16,7 @@ enum Tab {
     #[default]
     Sell,
     Buy,
+    Contracts,
     Browse,
 }
 
@@ -39,24 +42,48 @@ impl MarketView {
                     }
                     if kit::ghost_button(ui, "⟳ Refresh").clicked() {
                         backend.market(MarketCmd::MyOrders);
+                        backend.market(MarketCmd::MyAuctions);
                     }
+                    let mut auto = stores::settings(backend).wfm_auto_status;
+                    if ui
+                        .checkbox(&mut auto, "In game while Warframe runs")
+                        .on_hover_text("In game once you log in to Warframe, your status back when it closes, and Invisible when FluffyFrame quits")
+                        .changed()
+                    {
+                        stores::update_settings(backend, |s| s.wfm_auto_status = auto);
+                    }
+                    status_picker(ui, state.wfm_status, backend);
                     ui.label(RichText::new(format!("Signed in as {}", s.ingame_name.as_deref().unwrap_or("?"))).color(TEXT_SECONDARY()));
                 });
             }
         });
-        kit::tabs(ui, &mut self.tab, &[(Tab::Sell, "Sell Orders".into()), (Tab::Buy, "Buy Orders".into()), (Tab::Browse, "Browse".into())]);
+        let contracts = if state.session.is_some() { format!("Riven Contracts ({})", state.my_auctions.len()) } else { "Riven Contracts".into() };
+        kit::tabs(
+            ui,
+            &mut self.tab,
+            &[(Tab::Sell, "Sell Orders".into()), (Tab::Buy, "Buy Orders".into()), (Tab::Contracts, contracts), (Tab::Browse, "Browse".into())],
+        );
         match self.tab {
             Tab::Browse => self.browse(ui, state, backend),
-            Tab::Sell | Tab::Buy => {
+            Tab::Sell | Tab::Buy | Tab::Contracts => {
                 if state.session.is_none() {
                     self.sign_in(ui, backend);
                 } else {
                     if !self.requested_orders {
                         self.requested_orders = true;
                         backend.market(MarketCmd::MyOrders);
+                        backend.market(MarketCmd::MyAuctions);
                     }
-                    let kind = if self.tab == Tab::Sell { OrderType::Sell } else { OrderType::Buy };
-                    self.orders(ui, state, backend, kind);
+                    // Weapon names and images for the contracts.
+                    if self.tab == Tab::Contracts && state.riven_weapons.is_none() && !state.riven_weapons_requested {
+                        state.riven_weapons_requested = true;
+                        backend.market(MarketCmd::RivenWeapons);
+                    }
+                    match self.tab {
+                        Tab::Contracts => self.contracts(ui, state, backend),
+                        Tab::Sell => self.orders(ui, state, backend, OrderType::Sell),
+                        _ => self.orders(ui, state, backend, OrderType::Buy),
+                    }
                 }
             }
         }
@@ -159,6 +186,81 @@ impl MarketView {
         });
     }
 
+    /// The user's open riven listings: price, visibility, remove.
+    fn contracts(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend) {
+        if state.my_auctions.is_empty() {
+            kit::empty(ui, "No riven contracts", "List a riven from its detail window in Rivens.");
+            return;
+        }
+        let labels: std::collections::HashMap<&str, String> = rivens_wfm::stat_options().into_iter().collect();
+        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+            for a in &state.my_auctions {
+                let weapon = state.riven_weapons.as_ref().and_then(|w| w.weapons.iter().find(|x| x.slug == a.weapon_slug));
+                let image = weapon.and_then(|w| w.game_ref.as_deref()).and_then(|g| state.db.as_ref()?.image_url(g));
+                kit::card(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        kit::remote_image(ui, image.as_deref(), vec2(40.0, 40.0));
+                        ui.vertical(|ui| {
+                            let weapon_name = weapon.map_or(a.weapon_slug.as_str(), |w| w.name.as_str());
+                            ui.label(RichText::new(format!("{weapon_name} {}", capitalize(&a.name))).family(theme::body_strong()).size(15.0));
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing.x = 10.0;
+                                for (attr, value, positive) in &a.attributes {
+                                    let label = labels.get(attr.as_str()).cloned().unwrap_or_else(|| attr.replace('_', " "));
+                                    let color = if *positive { POSITIVE() } else { NEGATIVE() };
+                                    ui.label(RichText::new(format!("{} {label}", attribute_value(attr, *value))).size(12.5).color(color));
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                if a.direct_sell {
+                                    kit::pill(ui, "Direct sale", INFO());
+                                } else {
+                                    kit::pill(ui, "Auction", ACCENT());
+                                    let bid = a.top_bid.map_or("no bids".to_string(), |b| format!("top bid {b} p"));
+                                    ui.label(RichText::new(bid).size(12.0).color(TEXT_SECONDARY()));
+                                    if let Some(b) = a.buyout.filter(|_| !a.direct_sell) {
+                                        ui.label(RichText::new(format!("buyout {b} p")).size(12.0).color(TEXT_SECONDARY()));
+                                    }
+                                }
+                                let meta = format!("Rank {} · MR {} · {} rerolls", a.mod_rank, a.mastery, a.rerolls);
+                                ui.label(RichText::new(meta).size(12.0).color(TEXT_MUTED()));
+                                if !a.visible {
+                                    kit::pill(ui, "Hidden", WARNING());
+                                }
+                                if a.private {
+                                    kit::pill(ui, "Private", WARNING());
+                                }
+                            });
+                        });
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if kit::ghost_button(ui, "Remove").clicked() {
+                                backend.market(MarketCmd::CloseAuction(a.id.clone()));
+                            }
+                            let current = a.price().unwrap_or(0);
+                            let vis_label = if a.visible { "Hide" } else { "Show" };
+                            if kit::ghost_button(ui, vis_label).clicked() {
+                                backend.market(MarketCmd::UpdateAuction { auction: Box::new(a.clone()), price: current, visible: !a.visible });
+                            }
+                            if kit::ghost_button(ui, "Open").on_hover_text(a.url()).clicked() {
+                                ui.ctx().open_url(egui::OpenUrl::new_tab(a.url()));
+                            }
+                            // A direct sale's price, an auction's starting bid.
+                            let base = if a.direct_sell { current } else { a.starting.unwrap_or(current) };
+                            let price = self.edits.entry(a.id.clone()).or_insert(base);
+                            if *price != base && kit::primary_button(ui, " Save ").clicked() {
+                                backend.market(MarketCmd::UpdateAuction { auction: Box::new(a.clone()), price: *price, visible: a.visible });
+                            }
+                            ui.add(egui::DragValue::new(price).range(1..=100_000).suffix(" p"))
+                                .on_hover_text(if a.direct_sell { "Price" } else { "Starting bid" });
+                        });
+                    });
+                });
+                ui.add_space(6.0);
+            }
+        });
+    }
+
     fn browse(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend) {
         let Some(catalog) = state.catalog.clone() else {
             ui.spinner();
@@ -236,4 +338,38 @@ impl MarketView {
             }
         });
     }
+}
+
+/// The warframe.market status, as a dropdown that sets it.
+fn status_picker(ui: &mut Ui, current: Option<rivens_presence::WfmStatus>, backend: &Backend) {
+    use crate::components::status_bar::wfm_status_color;
+    let text = |s: Option<rivens_presence::WfmStatus>| {
+        RichText::new(format!("● {}", s.map_or("Status…", |s| s.label()))).color(wfm_status_color(s))
+    };
+    egui::ComboBox::from_id_salt("wfm-status").width(110.0).selected_text(text(current)).show_ui(ui, |ui| {
+        for s in rivens_presence::WfmStatus::ALL {
+            if ui.selectable_label(current == Some(s), text(Some(s))).clicked() && current != Some(s) {
+                backend.presence(PresenceCmd::Set(s));
+            }
+        }
+    });
+}
+
+/// "crita-visicron" → "Crita-visicron".
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+}
+
+/// A warframe.market attribute value as the card prints it: faction damage as
+/// a multiplier, flat stats without "%".
+fn attribute_value(attr: &str, value: f64) -> String {
+    let v = format!("{value:.2}");
+    let v = v.trim_end_matches('0').trim_end_matches('.');
+    if attr.starts_with("damage_vs_") || attr.starts_with("damage_to_") {
+        return format!("x{v}");
+    }
+    let sign = if value >= 0.0 { "+" } else { "" };
+    let unit = if matches!(attr, "punch_through" | "range" | "combo_duration") { "" } else { "%" };
+    format!("{sign}{v}{unit}")
 }

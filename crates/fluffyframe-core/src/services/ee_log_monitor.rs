@@ -166,6 +166,27 @@ pub fn parse_trade_dialog(lines: &[String]) -> Option<LogTrade> {
 }
 
 /// Line-level state machine, separate from file IO so it is testable.
+fn is_login_line(line: &str) -> bool {
+    line.contains("MainMenu::LoginDone result=true") || line.contains("Logging in as ")
+}
+
+/// Whether the log already shows a login: following starts at the end of the
+/// file, so a game logged in before the app started would otherwise look
+/// logged out until its next restart.
+fn logged_in_already(path: &std::path::Path) -> bool {
+    use std::io::BufRead;
+    let Ok(file) = std::fs::File::open(path) else { return false };
+    let mut reader = std::io::BufReader::new(file);
+    let mut line = Vec::new();
+    while reader.read_until(b'\n', &mut line).is_ok_and(|n| n > 0) {
+        if is_login_line(&String::from_utf8_lossy(&line)) {
+            return true;
+        }
+        line.clear();
+    }
+    false
+}
+
 #[derive(Default)]
 pub struct LineParser {
     dialog: Vec<String>,
@@ -176,7 +197,7 @@ pub struct LineParser {
 
 impl LineParser {
     pub fn handle(&mut self, line: &str, out: &mut Vec<LogEvent>) {
-        if line.contains("MainMenu::LoginDone result=true") || line.contains("Logging in as ") {
+        if is_login_line(line) {
             out.push(LogEvent::LoginComplete);
         }
         if let Some(name) = parse_whisper_username(line) {
@@ -277,6 +298,11 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
                 if tx.send(LogEvent::Attached(found)).is_err() {
                     return;
                 }
+                // Only the login state is caught up: older whispers and trades
+                // were already handled (or missed) and would only repeat.
+                if path.as_deref().is_some_and(logged_in_already) && tx.send(LogEvent::LoginComplete).is_err() {
+                    return;
+                }
             }
         }
         ticks_since_resolve += 1;
@@ -319,6 +345,18 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_an_earlier_login() {
+        let dir = std::env::temp_dir().join(format!("ff-eelog-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("EE.log");
+        std::fs::write(&log, b"1.0 Sys [Info]: boot\n\xff\xfe junk\n12.3 Sys [Info]: Logging in as Tenno\n").unwrap();
+        assert!(logged_in_already(&log));
+        std::fs::write(&log, b"1.0 Sys [Info]: boot\n").unwrap();
+        assert!(!logged_in_already(&log));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn whisper() {

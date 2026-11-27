@@ -75,7 +75,22 @@ pub struct RivensView {
     /// Detail window: hide bidding auctions, keep direct sales (off by default).
     direct_only: bool,
     show_all_listings: bool,
+    /// The open riven's sale form.
+    sell: SellForm,
     finder: super::riven_finder::FinderView,
+}
+
+/// "Sell on warframe.market" inputs in the detail window.
+#[derive(Default)]
+struct SellForm {
+    auction: bool,
+    /// Direct sale price, or the auction's starting price.
+    price: u32,
+    /// Auction buyout; 0 for none.
+    buyout: u32,
+    min_reputation: u32,
+    private: bool,
+    note: String,
 }
 
 fn ptr<T>(a: &Option<Arc<T>>) -> usize {
@@ -261,6 +276,7 @@ impl RivensView {
         if let Some(i) = clicked {
             self.open = Some(i);
             self.show_all_listings = false;
+            self.sell = SellForm::default();
             if let Some(slug) = self.slug_for(state, &decoded.list[i].0) {
                 backend.market(MarketCmd::RivenAuctions(slug));
             }
@@ -268,7 +284,7 @@ impl RivensView {
         if let Some(i) = self.open
             && let Some((riven, d)) = decoded.list.get(i)
         {
-            self.detail_modal(ui.ctx(), state, riven, d, lookup);
+            self.detail_modal(ui.ctx(), state, backend, riven, d, lookup);
         }
         self.decoded = Some(decoded);
     }
@@ -325,6 +341,74 @@ fn dispo_stars(d: f64) -> &'static str {
     }
 }
 
+impl RivensView {
+    /// "Sell on warframe.market": direct sale or auction for the open riven,
+    /// at its current rank and card values.
+    fn sell_panel(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend, riven: &OwnedRiven, d: &DecodedRiven, slug: Option<&str>) {
+        ui.label(RichText::new("Sell on warframe.market").font(FontId::new(16.0, theme::display_bold())).color(TEXT()));
+        ui.add_space(4.0);
+        if state.session.is_none() {
+            ui.label(RichText::new("Sign in to warframe.market on the Market page to list rivens.").color(TEXT_MUTED()));
+            return;
+        }
+        let Some(slug) = slug else {
+            ui.label(RichText::new("warframe.market doesn't list rivens for this weapon.").color(TEXT_MUTED()));
+            return;
+        };
+        let f = &mut self.sell;
+        egui::Frame::new().fill(BG_WELL()).corner_radius(RADIUS_MD()).inner_margin(Margin::same(10)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_wrapped(|ui| {
+                kit::segmented(ui, &mut f.auction, &[(false, "Direct sale"), (true, "Auction")]);
+                kit::labelled(ui, if f.auction { "Starting price" } else { "Price" }, |ui| {
+                    ui.add(egui::DragValue::new(&mut f.price).range(0..=100_000).suffix(" p"))
+                });
+                if f.auction {
+                    kit::labelled(ui, "Buyout", |ui| {
+                        ui.add(egui::DragValue::new(&mut f.buyout).range(0..=100_000).custom_formatter(|v, _| if v == 0.0 { "none".into() } else { format!("{v} p") }))
+                    });
+                    kit::labelled(ui, "Min. reputation", |ui| ui.add(egui::DragValue::new(&mut f.min_reputation).range(0..=10_000)));
+                }
+                ui.checkbox(&mut f.private, "Private").on_hover_text("Hidden from search until you make it public on warframe.market");
+            });
+            ui.add_space(6.0);
+            ui.add(egui::TextEdit::singleline(&mut f.note).hint_text("Note (optional)").desired_width(f32::INFINITY));
+            ui.add_space(6.0);
+            let invalid = f.price == 0 || (f.auction && f.buyout > 0 && f.buyout < f.price);
+            ui.horizontal(|ui| {
+                let label = if f.auction { "List auction" } else { "List for sale" };
+                if ui.add_enabled_ui(!invalid, |ui| kit::primary_button(ui, label)).inner.clicked() {
+                    let kind = if f.auction {
+                        rivens_wfm::ListingKind::Auction { starting: f.price, buyout: (f.buyout > 0).then_some(f.buyout), min_reputation: f.min_reputation }
+                    } else {
+                        rivens_wfm::ListingKind::Direct { price: f.price }
+                    };
+                    backend.market(MarketCmd::CreateRivenAuction(Box::new(rivens_wfm::RivenListing {
+                        weapon_slug: slug.to_string(),
+                        name: d.suffix.clone(),
+                        attributes: d.stats.iter().map(|s| (s.tag.clone(), s.value, s.positive)).collect(),
+                        rerolls: riven.rerolls,
+                        mastery_level: riven.mastery_req,
+                        polarity: riven.polarity.clone(),
+                        mod_rank: riven.rank,
+                        kind,
+                        private: f.private,
+                        note: f.note.clone(),
+                    })));
+                }
+                let hint = if f.price == 0 {
+                    "Set a price.".to_string()
+                } else if invalid {
+                    "Buyout must be at least the starting price.".to_string()
+                } else {
+                    format!("Lists rank {} with its current stats.", riven.rank)
+                };
+                ui.label(RichText::new(hint).size(12.0).color(TEXT_MUTED()));
+            });
+        });
+    }
+}
+
 fn section_title(ui: &mut Ui, text: &str) {
     ui.add_space(10.0);
     ui.label(RichText::new(text).font(FontId::new(16.0, theme::display_bold())).color(TEXT()));
@@ -354,7 +438,15 @@ fn tag_chip(ui: &mut Ui, text: &str, matched: bool) {
 impl RivensView {
     /// Riven details (original: `RivenDetailModal.svelte`). Listing a riven on
     /// warframe.market from here is not ported.
-    fn detail_modal(&mut self, ctx: &egui::Context, state: &AppState, riven: &OwnedRiven, d: &DecodedRiven, lookup: &mut Option<(String, String)>) {
+    fn detail_modal(
+        &mut self,
+        ctx: &egui::Context,
+        state: &AppState,
+        backend: &Backend,
+        riven: &OwnedRiven,
+        d: &DecodedRiven,
+        lookup: &mut Option<(String, String)>,
+    ) {
         let mut close = false;
         let frame = egui::Frame::new()
             .fill(BG_SURFACE())
@@ -477,6 +569,11 @@ impl RivensView {
                     }
                 }
 
+                // Selling, above the (long) similar listings.
+                ui.add_space(10.0);
+                let slug = self.slug_for(state, riven);
+                self.sell_panel(ui, state, backend, riven, d, slug.as_deref());
+
                 // Similar live listings.
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
@@ -486,7 +583,6 @@ impl RivensView {
                     }
                 });
                 ui.add_space(4.0);
-                let slug = self.slug_for(state, riven);
                 match slug.as_ref().and_then(|s| state.riven_auctions.get(s)) {
                     None if slug.is_some() => {
                         ui.horizontal(|ui| {

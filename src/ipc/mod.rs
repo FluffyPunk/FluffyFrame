@@ -7,6 +7,7 @@ mod data_worker;
 mod inventory_worker;
 mod log_router;
 mod market_worker;
+mod presence_worker;
 mod price_worker;
 
 use std::path::PathBuf;
@@ -33,6 +34,7 @@ pub use data_worker::DataCmd;
 pub use inventory_worker::InventoryCmd;
 pub use log_router::LogCmd;
 pub use market_worker::MarketCmd;
+pub use presence_worker::PresenceCmd;
 pub use price_worker::PriceCmd;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +53,10 @@ pub enum Event {
     World(Arc<WorldState>),
     Arbi(Arc<ArbiSchedule>),
     Drops(Arc<DropIndex>),
+    /// The user's warframe.market status (None: signed out or unknown).
+    WfmStatus(Option<fluffyframe_core::services::wfm_presence::WfmStatus>),
+    /// The user's open riven listings.
+    MyAuctions(Vec<fluffyframe_core::services::wfm_riven_search::RivenAuction>),
     /// Empty when it couldn't be fetched.
     Bounties(Arc<fluffyframe_core::services::bounty_cycle::BountyBook>),
     /// Community riven good-rolls sheet (attribute grades).
@@ -102,6 +108,7 @@ pub struct Backend {
     prices: Sender<PriceCmd>,
     market: Sender<MarketCmd>,
     log: Sender<LogCmd>,
+    presence: Sender<PresenceCmd>,
 }
 
 impl Backend {
@@ -120,6 +127,7 @@ impl Backend {
         let (prices, prices_rx) = unbounded();
         let (market, market_rx) = unbounded();
         let (log, log_rx) = unbounded();
+        let (presence, presence_rx) = unbounded();
 
         spawn("data", {
             let (s, e) = (shared.clone(), emitter.clone());
@@ -142,7 +150,12 @@ impl Backend {
             move || log_router::run(s, e, log_rx, inv)
         });
 
-        Self { shared, events, data, inventory, prices, market, log }
+        spawn("presence", {
+            let (s, e) = (shared.clone(), emitter.clone());
+            move || presence_worker::run(s, e, presence_rx)
+        });
+
+        Self { shared, events, data, inventory, prices, market, log, presence }
     }
 
     pub fn data(&self, cmd: DataCmd) {
@@ -156,6 +169,14 @@ impl Backend {
     }
     pub fn market(&self, cmd: MarketCmd) {
         let _ = self.market.send(cmd);
+    }
+    /// Shutdown work that must finish before the process exits.
+    pub fn on_exit(&self) {
+        presence_worker::on_app_exit(&self.shared);
+    }
+
+    pub fn presence(&self, cmd: PresenceCmd) {
+        let _ = self.presence.send(cmd);
     }
     pub fn log(&self, cmd: LogCmd) {
         let _ = self.log.send(cmd);
