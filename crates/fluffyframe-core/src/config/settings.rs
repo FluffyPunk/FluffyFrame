@@ -75,6 +75,8 @@ pub struct Settings {
     /// Monitor the overlay goes on (None: Wayland compositors pick the focused
     /// one; elsewhere the first).
     pub overlay_monitor: Option<String>,
+    /// Where the overlay sits and its size, as moved and resized in its edit mode.
+    pub overlay_layout: OverlayLayout,
     /// Dailies/weeklies checklist: task id → reset timestamp it was ticked in.
     pub checklist: std::collections::BTreeMap<String, i64>,
     pub ui_scale: f32,
@@ -109,6 +111,22 @@ pub struct Settings {
     pub player_name: Option<String>,
 }
 
+/// The overlay's top-right corner's distance from its monitor's top-right
+/// corner (logical pixels), and its scale.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OverlayLayout {
+    pub right: i32,
+    pub top: i32,
+    pub scale: f32,
+}
+
+impl Default for OverlayLayout {
+    fn default() -> Self {
+        Self { right: 32, top: 32, scale: 1.0 }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -125,6 +143,7 @@ impl Default for Settings {
             riven_hotkey: "Ctrl+Alt+R".into(),
             overlay_enabled: true,
             overlay_monitor: None,
+            overlay_layout: OverlayLayout::default(),
             checklist: Default::default(),
             ui_scale: 1.0,
             landing_view: "inventory".into(),

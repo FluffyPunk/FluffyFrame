@@ -1,5 +1,6 @@
 //! X11: an override-redirect window (window managers don't manage or tile it)
-//! with a 32-bit visual for transparency and an empty input shape.
+//! with a 32-bit visual for transparency and an empty input shape. In edit
+//! mode the input shape is the whole window and button events come through.
 
 use anyhow::{Context, Result};
 use tiny_skia::Pixmap;
@@ -13,7 +14,7 @@ use x11rb::protocol::xproto::{
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
-use super::{Backend, corner, render::to_bgra};
+use super::{Backend, Pointer, corner, render::to_bgra};
 
 pub struct X11Overlay {
     conn: RustConnection,
@@ -21,6 +22,11 @@ pub struct X11Overlay {
     gc: u32,
     depth: u8,
     mapped: bool,
+    /// Where the window was last placed (root coordinates): pointer input is
+    /// measured from it, not from where the server has it yet, so a drag
+    /// doesn't run ahead of the pointer.
+    position: (i32, i32),
+    shape: bool,
     /// What is shown (B, G, R, A premultiplied), for redraws on expose.
     shown: Option<(Vec<u8>, u16, u16)>,
 }
@@ -50,20 +56,19 @@ impl X11Overlay {
             .background_pixel(0)
             .border_pixel(0)
             .colormap(colormap)
-            .event_mask(EventMask::EXPOSURE);
+            .event_mask(EventMask::EXPOSURE | EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::BUTTON1_MOTION);
         conn.create_window(depth, window, root.root, 0, 0, 1, 1, 0, WindowClass::INPUT_OUTPUT, visual, &aux)?;
         conn.change_property8(PropMode::REPLACE, window, AtomEnum::WM_NAME, AtomEnum::STRING, b"FluffyFrame overlay")?;
         conn.change_property8(PropMode::REPLACE, window, AtomEnum::WM_CLASS, AtomEnum::STRING, b"fluffyframe-overlay\0FluffyFrame\0")?;
-        // Clicks pass through: an empty input shape.
-        if conn.extension_information(shape::X11_EXTENSION_NAME)?.is_some() {
-            conn.shape_rectangles(shape::SO::SET, shape::SK::INPUT, ClipOrdering::UNSORTED, window, 0, 0, &[])?;
-        } else {
+        let shape = conn.extension_information(shape::X11_EXTENSION_NAME)?.is_some();
+        if !shape {
             log::warn!("X server has no SHAPE extension: the overlay will catch clicks");
         }
         let gc = conn.generate_id()?;
         conn.create_gc(gc, window, &CreateGCAux::new())?;
-        conn.flush()?;
-        Ok(Self { conn, window, gc, depth, mapped: false, shown: None })
+        let mut overlay = Self { conn, window, gc, depth, mapped: false, position: (0, 0), shape, shown: None };
+        overlay.set_interactive(false)?;
+        Ok(overlay)
     }
 
     fn paint(&self) -> Result<()> {
@@ -82,10 +87,11 @@ impl X11Overlay {
 }
 
 impl Backend for X11Overlay {
-    fn show(&mut self, monitor: Option<&str>, pixels: &Pixmap) -> Result<()> {
+    fn show(&mut self, monitor: Option<&str>, pixels: &Pixmap, right: i32, top: i32) -> Result<()> {
         let monitors = crate::monitors::x11::monitors()?;
         let target = crate::pick(&monitors, monitor).context("no monitor")?;
-        let (x, y) = corner(target, pixels.width());
+        let (x, y) = corner(target, pixels.width(), right, top);
+        self.position = (x, y);
         let (w, h) = (pixels.width() as u16, pixels.height() as u16);
         let aux = ConfigureWindowAux::new().x(x).y(y).width(u32::from(w)).height(u32::from(h)).stack_mode(StackMode::ABOVE);
         self.conn.configure_window(self.window, &aux)?;
@@ -106,14 +112,43 @@ impl Backend for X11Overlay {
         self.shown = None;
     }
 
-    fn pump(&mut self) -> Result<()> {
+    fn set_interactive(&mut self, on: bool) -> Result<()> {
+        if self.shape {
+            if on {
+                // No input shape: the window's own rectangle takes the pointer.
+                self.conn.shape_mask(shape::SO::SET, shape::SK::INPUT, self.window, 0, 0, x11rb::NONE)?;
+            } else {
+                // Clicks pass through: an empty input shape.
+                self.conn.shape_rectangles(shape::SO::SET, shape::SK::INPUT, ClipOrdering::UNSORTED, self.window, 0, 0, &[])?;
+            }
+        }
+        self.conn.flush()?;
+        Ok(())
+    }
+
+    fn pump(&mut self) -> Result<Vec<Pointer>> {
         let mut expose = false;
+        let mut input = Vec::new();
+        // Panel pixels from root coordinates and where the window was put.
+        let at = |x: i16, y: i16| (f64::from(i32::from(x) - self.position.0), f64::from(i32::from(y) - self.position.1));
         while let Some(event) = self.conn.poll_for_event()? {
-            expose |= matches!(event, Event::Expose(_));
+            match event {
+                Event::Expose(_) => expose = true,
+                Event::ButtonPress(e) if e.detail == 1 => {
+                    let (x, y) = at(e.root_x, e.root_y);
+                    input.push(Pointer::Press(x, y));
+                }
+                Event::MotionNotify(e) => {
+                    let (x, y) = at(e.root_x, e.root_y);
+                    input.push(Pointer::Motion(x, y));
+                }
+                Event::ButtonRelease(e) if e.detail == 1 => input.push(Pointer::Release),
+                _ => {}
+            }
         }
         if expose {
             self.paint()?;
         }
-        Ok(())
+        Ok(input)
     }
 }

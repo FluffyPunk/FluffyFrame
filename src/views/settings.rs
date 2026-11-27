@@ -316,6 +316,27 @@ impl SettingsView {
             });
             ui.label(RichText::new(tr("Automatic: the focused monitor on Wayland, the first one elsewhere.")).size(11.5).color(TEXT_MUTED()));
             ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let editing = backend.overlay.editing();
+                let label = if editing { tr("Lock layout") } else { tr("Edit layout") };
+                if kit::ghost_button(ui, label).clicked() {
+                    backend.overlay.set_editing((!editing).then(|| fluffyframe_overlay::overlay::Panel {
+                        title: tr("Riven overlay").into(),
+                        lines: vec![
+                            tr("Drag to move it.").into(),
+                            tr("Drag the bottom-right corner to resize it.").into(),
+                            tr("Lock it in Settings when done.").into(),
+                        ],
+                    }));
+                }
+                if kit::ghost_button(ui, tr("Reset layout")).clicked() {
+                    s.overlay_layout = Default::default();
+                    backend.overlay.set_layout(crate::ipc::overlay_layout(s.overlay_layout));
+                }
+            });
+            if backend.overlay.editing() {
+                ui.label(RichText::new(tr("The overlay is unlocked: drag it, or its corner to resize. Its position and size are saved when locked.")).size(11.5).color(WARNING()));
+            }
             if kit::ghost_button(ui, tr("Show test panel")).clicked() {
                 let panel = fluffyframe_overlay::overlay::Panel {
                     title: "FluffyFrame".into(),

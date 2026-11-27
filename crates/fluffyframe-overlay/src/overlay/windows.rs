@@ -1,5 +1,6 @@
 //! Windows: a layered (per-pixel alpha), topmost, transparent (click-through)
-//! tool window that never takes focus.
+//! tool window that never takes focus. In edit mode it stops being
+//! transparent and captures the mouse while dragged.
 
 use anyhow::{Context, Result};
 use tiny_skia::Pixmap;
@@ -9,15 +10,17 @@ use windows::Win32::Graphics::Gdi::{
     CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, HWND_TOPMOST, MSG, PM_REMOVE, PeekMessageW,
-    RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos, ShowWindow,
-    TranslateMessage, ULW_ALPHA, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GWL_EXSTYLE, GetCursorPos, GetWindowLongPtrW,
+    HWND_TOPMOST, IDC_SIZEALL, LoadCursorW, MSG, PM_REMOVE, PeekMessageW, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, ULW_ALPHA,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::w;
 
-use super::{Backend, corner, render::to_bgra};
+use super::{Backend, Pointer, corner, render::to_bgra};
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
@@ -25,6 +28,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
 pub struct WinOverlay {
     hwnd: HWND,
+    /// Where the window was last placed: pointer input is measured from it.
+    position: (i32, i32),
+    /// A drag holds the mouse capture.
+    dragging: bool,
 }
 
 impl WinOverlay {
@@ -35,6 +42,8 @@ impl WinOverlay {
                 lpfnWndProc: Some(wndproc),
                 hInstance: instance,
                 lpszClassName: w!("FluffyFrameOverlay"),
+                // Only seen in edit mode: everywhere else clicks pass through.
+                hCursor: LoadCursorW(None, IDC_SIZEALL).unwrap_or_default(),
                 ..Default::default()
             };
             RegisterClassW(&class);
@@ -53,16 +62,17 @@ impl WinOverlay {
                 None,
             )
             .context("creating the overlay window")?;
-            Ok(Self { hwnd })
+            Ok(Self { hwnd, position: (0, 0), dragging: false })
         }
     }
 }
 
 impl Backend for WinOverlay {
-    fn show(&mut self, monitor: Option<&str>, pixels: &Pixmap) -> Result<()> {
+    fn show(&mut self, monitor: Option<&str>, pixels: &Pixmap, right: i32, top: i32) -> Result<()> {
         let monitors = crate::monitors::monitors()?;
         let target = crate::pick(&monitors, monitor).context("no monitor")?;
-        let (x, y) = corner(target, pixels.width());
+        let (x, y) = corner(target, pixels.width(), right, top);
+        self.position = (x, y);
         let (w, h) = (pixels.width() as i32, pixels.height() as i32);
         let data = to_bgra(pixels);
         unsafe {
@@ -110,15 +120,56 @@ impl Backend for WinOverlay {
         }
     }
 
-    fn pump(&mut self) -> Result<()> {
+    fn set_interactive(&mut self, on: bool) -> Result<()> {
         unsafe {
+            let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
+            let transparent = WS_EX_TRANSPARENT.0 as isize;
+            let style = if on { style & !transparent } else { style | transparent };
+            SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, style);
+            if !on && self.dragging {
+                let _ = ReleaseCapture();
+                self.dragging = false;
+            }
+        }
+        Ok(())
+    }
+
+    fn pump(&mut self) -> Result<Vec<Pointer>> {
+        let mut input = Vec::new();
+        unsafe {
+            // Panel pixels from the screen cursor and where the window was put.
+            let at = |position: (i32, i32)| {
+                let mut p = POINT::default();
+                let _ = GetCursorPos(&mut p);
+                (f64::from(p.x - position.0), f64::from(p.y - position.1))
+            };
             let mut msg = MSG::default();
             while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                if msg.hwnd == self.hwnd {
+                    match msg.message {
+                        WM_LBUTTONDOWN => {
+                            SetCapture(self.hwnd);
+                            self.dragging = true;
+                            let (x, y) = at(self.position);
+                            input.push(Pointer::Press(x, y));
+                        }
+                        WM_MOUSEMOVE if self.dragging => {
+                            let (x, y) = at(self.position);
+                            input.push(Pointer::Motion(x, y));
+                        }
+                        WM_LBUTTONUP if self.dragging => {
+                            let _ = ReleaseCapture();
+                            self.dragging = false;
+                            input.push(Pointer::Release);
+                        }
+                        _ => {}
+                    }
+                }
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
         }
-        Ok(())
+        Ok(input)
     }
 }
 

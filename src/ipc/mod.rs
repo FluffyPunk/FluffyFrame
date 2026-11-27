@@ -15,7 +15,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use fluffyframe_core::config::settings::Settings;
+use fluffyframe_core::config::settings::{OverlayLayout, Settings};
 use fluffyframe_core::services::api_helper_runner::HelperStatus;
 use fluffyframe_core::services::arbi_schedule::ArbiSchedule;
 use fluffyframe_core::services::drop_data::DropIndex;
@@ -165,7 +165,17 @@ impl Backend {
             }
         });
 
-        let overlay = fluffyframe_overlay::overlay::Overlay::start(crate::theme::overlay_fonts());
+        let layout = shared.settings.read().unwrap().overlay_layout;
+        let overlay = fluffyframe_overlay::overlay::Overlay::start(crate::theme::overlay_fonts(), overlay_layout(layout), {
+            let shared = shared.clone();
+            move |l| {
+                let mut s = shared.settings.write().unwrap();
+                s.overlay_layout = OverlayLayout { right: l.right, top: l.top, scale: l.scale };
+                if let Err(e) = s.save() {
+                    log::warn!("saving the overlay layout: {e}");
+                }
+            }
+        });
 
         Self { shared, events, data, inventory, prices, market, log, presence, hotkey, overlay }
     }
@@ -202,6 +212,11 @@ impl Backend {
     pub fn import_inventory(&self, path: PathBuf) {
         self.inventory(InventoryCmd::Import(path));
     }
+}
+
+/// The saved overlay layout, as the overlay takes it.
+pub fn overlay_layout(l: OverlayLayout) -> fluffyframe_overlay::overlay::Layout {
+    fluffyframe_overlay::overlay::Layout { right: l.right, top: l.top, scale: l.scale }
 }
 
 fn spawn(name: &str, f: impl FnOnce() + Send + 'static) {
