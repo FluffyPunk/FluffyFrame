@@ -3,10 +3,6 @@
 FluffyFrame is a Rust port of [WFHelper](https://github.com/WFHelper/WFHelper), the unofficial
 Warframe companion app. It is a native egui app with no Electron and no Node.
 
-It reads your inventory straight from the running game, prices it with live
-warframe.market data, and shows relics, foundry, mastery, rivens, world state,
-arbitrations and trade stats.
-
 ## Comparison
 
 | Stats | AlecaFrame | WFHelper | FluffyFrame |
@@ -14,7 +10,7 @@ arbitrations and trade stats.
 | System availability | Windows only | Windows and Linux AppImage | Windows and Linux Binary |
 | Code solution | Proprietary Overwolf plugin | Open-source Electron App | Open-source Rust Binary |
 | RAM usage | Idk, but consider that it also uses Overwolf itself | 400MB-1GB | 100-200MB(current release) |
-| Features | Relic and Riven Overlays | Same, but lacking language support | Planned both with total language support + moving most of browse.wf information natively |
+| Features | Relic and Riven Overlays | Same, but lacking language support | Reroll analyzer(API level, no language dependency), other WIP |
 
 ## Run
 
@@ -89,44 +85,43 @@ Ported:
 
 - **Dashboard**: widget cards for cycles, fissures, Baro, wallet, est. value,
   foundry, trades and the current arbitration
+
 - **Inventory**: card grid or rows, category tabs, include chips, value
   estimate, full sets, the Market Listings side panel (best WTS/WTB/spread,
   rank view, sort, Post WTS/WTB, whisper/profile per order), bulk sell
+  
 - **Item detail modal** from any view: tags (Prime, Vaulted, Mastered, Parent
   owned), "Part of" navigation with back stack, colored components list with a
   side panel per component, drops, relics, crafting tree
+  
 - **Relic Planner**: cards with owned-reward highlighting, and a detail modal
-  with refinement tabs and Solo/2P/3P/4P expected value
+  with refinement tabs and Solo/2P/3P/4P expected value (feature diff: proper name sorting, WIP)
+
 - **Foundry** (filters, cards open the item modal), **Mastery** (roadmap,
   detailed breakdown, collection grid), **Stats**, **Syndicates**, **Market**,
   **Wiki / Drop Data**, **Settings**, **Setup** wizard
-- **Rivens**: in-game style cards with real stat values (DE's riven tables and
-  dispositions), generated names, letter grades, attribute grades from the
-  community good-rolls sheet, Endo dissolve hints and chat-tag copy; a detail
-  window with roll bars, best attributes and similar warframe.market listings;
-  veiled rivens grouped by challenge with progress; Riven Finder
-- **World**: this-week strip, cycles, reset timers, Prime Resurgence, The
-  Circuit, invasions, Darvo's deal, fissures, bounties; **Arbitrations**
-  (node list with favorites, day-grouped schedule); **Dailies/Weeklies**
-  checklist that resets per task period; **Baro** planner
+  
+- **Rivens**: fully implemented Riven gallery: rolls, stats, grading, market comparison and listing. Also implemented API-level reroll analyzer.
+> [!NOTE]
+> For those, who kinda know and who doesn't at all - Original project(WFHelper) uses OCR for reading stats from both sides of reroll to compare. Pros: time, cons: accuracy. I(using Claude ofc) found a spot in inventory API response, when reroll is pending. Pros: 100% accuracy, cons: no instant marker, so either delayed automated API request or manual request by hotkey.
+ 
+- **World**: revamped dashboard about all the general stats: planet cycles, reset timers, invasion, alerts, Circuit etc.
+Unique solutions: invirogations forecast(same as browse.wf)
+
 - All 16 theme presets from the original, plus corner style
-- Vaulted status for relics and prime parts, derived from the live drop tables
+
 - EE.log tailing (Steam/Proton, Heroic, Lutris, Bottles, Wine, Windows) for
   logins, whispers and trades, with desktop notifications for whispers, trades,
   favorite arbitrations and fissure rules
 
-Excluded by request:
+WIP:
 
-- OCR riven scanner
 - all in-game overlays (relic rewards, relic planner, riven, trade notification)
-- arbitration summary, including the EE.log run analysis behind it
-
-Not ported yet:
-
+- Run analyzers - Profit-Taker, Tridolon, Arbitrations
 - Market Analytics and Missions/Enemies views
 - the custom theme builder and custom CSS
 - dashboard layout editing and pop-out widgets
-- auto-update, Duviri cycle, Mastery "Planned"/"Codex"/"Incarnon" tabs
+- auto-update, Mastery "Planned"/"Codex"/"Incarnon" tabs
 
 ## Tests
 
@@ -135,4 +130,14 @@ cargo test --workspace
 cargo run -p fluffyframe-core --example smoke   # live check against the real endpoints
 ```
 
-Not affiliated with Digital Extremes.
+# Credits
+
+- [WFHelper](https://github.com/WFHelper/WFHelper) - used as a starting base for the project
+- [calamity-inc](https://github.com/calamity-inc) - most unofficial data. Invigorations forecast was ported from their [oracle](https://github.com/calamity-inc/wf.browse.oracle/tree/senpai)
+- [warframe.market](https://warframe.market) - direct market integration. Everybody uses, everybody owes them
+- [DE's Public export](https://content.warframe.com/PublicExport/index_en.txt.lzma), [world state](https://api.warframe.com/cdn/worldState.php) - official info
+- all the other guys who are included in OG project and known in community
+
+# Disclaimer
+
+Project is not affiliated with Digital Extremes. Warframe and all its assets are property of Digital Extremes Ltd.
