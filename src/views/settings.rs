@@ -11,6 +11,7 @@ use crate::components::ui as kit;
 use crate::ipc::{Backend, DataCmd, InventoryCmd, LogCmd};
 use crate::stores::{self, AppState};
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Tab {
@@ -97,20 +98,20 @@ impl SettingsView {
 
         centered(ui, |ui| {
             ui.horizontal(|ui| {
-                kit::page_title(ui, "Settings", None);
+                kit::page_title(ui, tr("Settings"), None);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(RichText::new("Changes apply automatically.").size(12.0).color(TEXT_MUTED()));
+                    ui.label(RichText::new(tr("Changes apply automatically.")).size(12.0).color(TEXT_MUTED()));
                 });
             });
             kit::tabs(
                 ui,
                 &mut self.tab,
                 &[
-                    (Tab::General, "General".into()),
-                    (Tab::Notifications, "Notifications".into()),
-                    (Tab::Inventory, "Inventory & Mastery".into()),
-                    (Tab::Appearance, "Appearance".into()),
-                    (Tab::About, "About".into()),
+                    (Tab::General, tr(tr("General")).into()),
+                    (Tab::Notifications, tr(tr("Notifications")).into()),
+                    (Tab::Inventory, tr(tr("Inventory & Mastery")).into()),
+                    (Tab::Appearance, tr(tr("Appearance")).into()),
+                    (Tab::About, tr(tr("About")).into()),
                 ],
             );
         });
@@ -131,6 +132,9 @@ impl SettingsView {
             });
         });
 
+        if s.language != before.language {
+            crate::i18n::set_locale(&s.language);
+        }
         if s.theme_preset != before.theme_preset || s.corner_style != before.corner_style {
             stores::apply_theme(ui.ctx(), &s);
         }
@@ -148,50 +152,50 @@ impl SettingsView {
     }
 
     fn general(&mut self, m: &mut Masonry, state: &AppState, backend: &Backend, s: &mut Settings) {
-        m.panel("Game log", |ui| {
+        m.panel(tr("Game log"), |ui| {
             match &state.ee_log {
                 Some(p) => {
-                    kit::caption(ui, "Following");
+                    kit::caption(ui, tr("Following"));
                     ui.add(egui::Label::new(RichText::new(p.display().to_string()).size(12.0).color(TEXT_SECONDARY())).wrap_mode(egui::TextWrapMode::Truncate))
                         .on_hover_text(p.display().to_string());
                 }
                 None => {
-                    ui.label(RichText::new("EE.log not found.").size(12.0).color(WARNING()));
+                    ui.label(RichText::new(tr("EE.log not found.")).size(12.0).color(WARNING()));
                 }
             }
             ui.add_space(4.0);
             let edit = self.ee_log_edit.get_or_insert_with(|| s.ee_log_path.clone().unwrap_or_default());
-            ui.add(egui::TextEdit::singleline(edit).hint_text("Auto-detect").desired_width(f32::INFINITY));
+            ui.add(egui::TextEdit::singleline(edit).hint_text(tr("Auto-detect")).desired_width(f32::INFINITY));
             ui.horizontal(|ui| {
-                if kit::ghost_button(ui, "Browse…").clicked()
+                if kit::ghost_button(ui, tr("Browse…")).clicked()
                     && let Some(p) = rfd::FileDialog::new().add_filter("EE.log", &["log"]).pick_file()
                 {
                     *edit = p.display().to_string();
                 }
-                if kit::ghost_button(ui, "Apply").clicked() {
+                if kit::ghost_button(ui, tr("Apply")).clicked() {
                     s.ee_log_path = Some(edit.trim().to_string()).filter(|p| !p.is_empty());
                 }
             });
             #[cfg(target_os = "linux")]
-            ui.label(RichText::new("On Steam, `PROTON_LOG=1 %command%` in Warframe's launch options makes events arrive sooner.").size(11.5).color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("On Steam, `PROTON_LOG=1 %command%` in Warframe's launch options makes events arrive sooner.")).size(11.5).color(TEXT_MUTED()));
         });
-        m.panel("Data", |ui| {
+        m.panel(tr("Data"), |ui| {
             ui.label(RichText::new(paths::data_dir().display().to_string()).size(12.0).color(TEXT_SECONDARY()));
             ui.horizontal(|ui| {
-                if kit::ghost_button(ui, "Open data folder").clicked() {
+                if kit::ghost_button(ui, tr("Open data folder")).clicked() {
                     ui.ctx().open_url(egui::OpenUrl::new_tab(format!("file://{}", paths::data_dir().display())));
                 }
-                if kit::ghost_button(ui, "Reload game data").clicked() {
+                if kit::ghost_button(ui, tr("Reload game data")).clicked() {
                     backend.data(DataCmd::ReloadGameData);
                 }
             });
             ui.add_space(4.0);
-            if kit::ghost_button(ui, "Run setup again").clicked() {
+            if kit::ghost_button(ui, tr("Run setup again")).clicked() {
                 s.setup_complete = false;
             }
         });
-        m.panel("Startup", |ui| {
-            row(ui, "Open on", |ui| {
+        m.panel(tr("Startup"), |ui| {
+            row(ui, tr("Open on"), |ui| {
                 egui::ComboBox::from_id_salt("landing")
                     .width(140.0)
                     .selected_text(ViewName::from_id(&s.landing_view).unwrap_or(ViewName::Inventory).label())
@@ -205,15 +209,15 @@ impl SettingsView {
     }
 
     fn notifications(&mut self, m: &mut Masonry, s: &mut Settings) {
-        m.panel("Desktop notifications", |ui| {
-            toggle(ui, "In-game whispers", &mut s.notify_whispers);
-            toggle(ui, "Completed trades", &mut s.notify_trades);
-            toggle(ui, "Favorite arbitrations", &mut s.notify_arbitrations);
-            ui.label(RichText::new("Pick favorite nodes in World › Arbitrations.").size(11.5).color(TEXT_MUTED()));
+        m.panel(tr("Desktop notifications"), |ui| {
+            toggle(ui, tr("In-game whispers"), &mut s.notify_whispers);
+            toggle(ui, tr("Completed trades"), &mut s.notify_trades);
+            toggle(ui, tr("Favorite arbitrations"), &mut s.notify_arbitrations);
+            ui.label(RichText::new(tr("Pick favorite nodes in World › Arbitrations.")).size(11.5).color(TEXT_MUTED()));
         });
-        m.panel("Void fissure alerts", |ui| {
-            toggle(ui, "Notify for matching fissures", &mut s.notify_fissures);
-            toggle(ui, "Steel Path only", &mut s.fissure_alert_steel_path);
+        m.panel(tr("Void fissure alerts"), |ui| {
+            toggle(ui, tr("Notify for matching fissures"), &mut s.notify_fissures);
+            toggle(ui, tr("Steel Path only"), &mut s.fissure_alert_steel_path);
             ui.horizontal_wrapped(|ui| {
                 let mut remove = None;
                 for (i, m) in s.fissure_alert_missions.iter().enumerate() {
@@ -226,8 +230,8 @@ impl SettingsView {
                 }
             });
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.fissure_mission).hint_text("Mission type, e.g. Survival").desired_width(180.0));
-                if kit::ghost_button(ui, "Add").clicked() && !self.fissure_mission.trim().is_empty() {
+                ui.add(egui::TextEdit::singleline(&mut self.fissure_mission).hint_text(tr("Mission type, e.g. Survival")).desired_width(180.0));
+                if kit::ghost_button(ui, tr("Add")).clicked() && !self.fissure_mission.trim().is_empty() {
                     s.fissure_alert_missions.push(self.fissure_mission.trim().to_string());
                     self.fissure_mission.clear();
                 }
@@ -236,57 +240,66 @@ impl SettingsView {
     }
 
     fn inventory(&mut self, m: &mut Masonry, state: &AppState, backend: &Backend, s: &mut Settings) {
-        m.panel("Inventory source", |ui| {
+        m.panel(tr("Inventory source"), |ui| {
             for source in [InventorySource::Game, InventorySource::ImportedJson, InventorySource::AlecaFrame, InventorySource::None] {
-                ui.radio_value(&mut s.inventory_source, source, source.label());
+                ui.radio_value(&mut s.inventory_source, source, tr(source.label()));
             }
             if s.inventory_source == InventorySource::Game {
                 ui.add_space(4.0);
-                row(ui, "Minutes between reads", |ui| {
+                row(ui, tr("Minutes between reads"), |ui| {
                     ui.add(egui::DragValue::new(&mut s.helper_poll_minutes).range(2..=120));
                 });
-                if kit::ghost_button(ui, "Read now").clicked() {
+                if kit::ghost_button(ui, tr("Read now")).clicked() {
                     backend.inventory(InventoryCmd::RefreshNow);
                 }
                 if let Some(f) = state.helper.last_failure {
                     ui.label(RichText::new(f.hint()).size(12.0).color(WARNING()));
                 }
                 #[cfg(target_os = "linux")]
-                ui.label(RichText::new("Reading game memory needs ptrace access: `sudo setcap cap_sys_ptrace+ep <path to fluffyframe>`.").size(11.5).color(TEXT_MUTED()));
+                ui.label(RichText::new(tr("Reading game memory needs ptrace access: `sudo setcap cap_sys_ptrace+ep <path to fluffyframe>`.")).size(11.5).color(TEXT_MUTED()));
             }
         });
-        m.panel("Import & export", |ui| {
-            if kit::ghost_button(ui, "Import inventory JSON / AlecaFrame cache…").clicked()
+        m.panel(tr("Import & export"), |ui| {
+            if kit::ghost_button(ui, tr("Import inventory JSON / AlecaFrame cache…")).clicked()
                 && let Some(path) = rfd::FileDialog::new().add_filter("Inventory", &["json", "dat", "txt"]).pick_file()
             {
                 backend.import_inventory(path);
             }
             ui.add_space(4.0);
             if state.inventory.is_some()
-                && kit::ghost_button(ui, "Export inventory…").clicked()
+                && kit::ghost_button(ui, tr("Export inventory…")).clicked()
                 && let Some(path) = rfd::FileDialog::new().set_file_name("inventory.json").save_file()
             {
                 backend.inventory(InventoryCmd::Export(path));
             }
-            ui.label(RichText::new("Export writes indented JSON instead of the single long line DE sends.").size(11.5).color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("Export writes indented JSON instead of the single long line DE sends.")).size(11.5).color(TEXT_MUTED()));
         });
-        m.panel("Value estimate", |ui| {
-            ui.radio_value(&mut s.value_scope, ValueScope::PrimePartsOnly, "Prime parts only");
-            ui.radio_value(&mut s.value_scope, ValueScope::AllTradables, "All tradables");
-            row(ui, "Ignore items below", |ui| {
+        m.panel(tr("Value estimate"), |ui| {
+            ui.radio_value(&mut s.value_scope, ValueScope::PrimePartsOnly, tr("Prime parts only"));
+            ui.radio_value(&mut s.value_scope, ValueScope::AllTradables, tr("All tradables"));
+            row(ui, tr("Ignore items below"), |ui| {
                 ui.add(egui::DragValue::new(&mut s.value_min_plat).range(0..=1000).suffix(" p"));
             });
-            row(ui, "Spare copies kept", |ui| {
+            row(ui, tr("Spare copies kept"), |ui| {
                 ui.add(egui::DragValue::new(&mut s.keep_spare_copies).range(0..=20));
             });
         });
     }
 
     fn appearance(&mut self, m: &mut Masonry, s: &mut Settings) {
-        m.panel("Presets", |ui| {
+        m.panel(tr("Language"), |ui| {
+            let current = crate::i18n::LOCALES.iter().find(|l| l.code == s.language).map_or("English", |l| l.name);
+            egui::ComboBox::from_id_salt("language").width(180.0).selected_text(current).show_ui(ui, |ui| {
+                for l in crate::i18n::LOCALES {
+                    ui.selectable_value(&mut s.language, l.code.to_string(), l.name);
+                }
+            });
+            ui.label(RichText::new(tr("Game data (item and stat names) stays in English.")).size(11.5).color(TEXT_MUTED()));
+        });
+        m.panel(tr("Presets"), |ui| {
             let label = theme::preset_list().into_iter().find(|(id, ..)| *id == s.theme_preset).map(|(_, l, _)| l).unwrap_or("Orokin Gold");
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Theme").color(TEXT_MUTED()));
+                ui.label(RichText::new(tr("Theme")).color(TEXT_MUTED()));
                 ui.label(RichText::new(label).family(theme::body_strong()));
             });
             ui.add_space(6.0);
@@ -294,17 +307,17 @@ impl SettingsView {
                 s.theme_preset = id;
             }
             ui.add_space(6.0);
-            if ui.add(egui::Button::new(RichText::new("Restore All Defaults").color(NEGATIVE())).stroke(egui::Stroke::new(1.0, NEGATIVE()))).clicked() {
+            if ui.add(egui::Button::new(RichText::new(tr("Restore All Defaults")).color(NEGATIVE())).stroke(egui::Stroke::new(1.0, NEGATIVE()))).clicked() {
                 s.theme_preset = "default".into();
                 s.corner_style = "soft".into();
                 s.ui_scale = 1.0;
                 s.inventory_rows = false;
             }
         });
-        m.panel("Style", |ui| {
-            row(ui, "Corners", |ui| {
+        m.panel(tr("Style"), |ui| {
+            row(ui, tr("Corners"), |ui| {
                 let mut v = s.corner_style.clone();
-                let opts: [(&str, &str); 3] = [("sharp", "Sharp"), ("soft", "Soft"), ("round", "Round")];
+                let opts: [(&str, &str); 3] = [("sharp", tr("Sharp")), ("soft", tr("Soft")), ("round", tr("Round"))];
                 let mut idx = opts.iter().position(|(k, _)| *k == v).unwrap_or(1);
                 // right-to-left layout: show the control as one widget
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
@@ -315,21 +328,21 @@ impl SettingsView {
                 });
                 s.corner_style = v;
             });
-            row(ui, "Inventory layout", |ui| {
+            row(ui, tr("Inventory layout"), |ui| {
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    kit::segmented(ui, &mut s.inventory_rows, &[(false, "Cards"), (true, "Rows")]);
+                    kit::segmented(ui, &mut s.inventory_rows, &[(false, tr(tr("Cards"))), (true, tr(tr("Rows")))]);
                 });
             });
-            ui.label(RichText::new("How the inventory grid shows items.").size(11.5).color(TEXT_MUTED()));
-            row(ui, "Riven cards", |ui| {
+            ui.label(RichText::new(tr("How the inventory grid shows items.")).size(11.5).color(TEXT_MUTED()));
+            row(ui, tr("Riven cards"), |ui| {
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    kit::segmented(ui, &mut s.riven_compact, &[(false, "Full"), (true, "Compact")]);
+                    kit::segmented(ui, &mut s.riven_compact, &[(false, tr(tr("Full"))), (true, tr(tr("Compact")))]);
                 });
             });
         });
-        m.panel("App size", |ui| {
-            ui.label("Interface scale");
-            ui.label(RichText::new("Zooms the whole app.").size(11.5).color(TEXT_MUTED()));
+        m.panel(tr("App size"), |ui| {
+            ui.label(tr("Interface scale"));
+            ui.label(RichText::new(tr("Zooms the whole app.")).size(11.5).color(TEXT_MUTED()));
             // Rescaling mid-drag moves the slider under the cursor: apply on
             // release, or right away for typed values and arrow keys.
             let resp = ui.add(egui::Slider::new(&mut s.ui_scale, 0.75..=1.75).step_by(0.05).show_value(true));
@@ -337,7 +350,7 @@ impl SettingsView {
                 stores::apply_theme(ui.ctx(), s);
             }
         });
-        m.panel("Sidebar views", |ui| {
+        m.panel(tr("Sidebar views"), |ui| {
             for v in ViewName::SIDEBAR.into_iter().filter(|v| v.hideable()) {
                 let mut shown = !s.hidden_views.iter().any(|h| h == v.id());
                 row(ui, v.label(), |ui| {
@@ -354,24 +367,24 @@ impl SettingsView {
 
     fn about(&mut self, m: &mut Masonry) {
         m.panel(app_meta::APP_NAME, |ui| {
-            ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
-            ui.label(RichText::new("Unofficial Warframe companion. A Rust port of WFHelper; inventory reading by wf-api-rust.").color(TEXT_SECONDARY()));
+            ui.label(trf("Version {}", &[&(env!("CARGO_PKG_VERSION"))]));
+            ui.label(RichText::new(tr("Unofficial Warframe companion. A Rust port of WFHelper; inventory reading by wf-api-rust.")).color(TEXT_SECONDARY()));
             ui.add_space(4.0);
-            ui.hyperlink_to("Source code", app_meta::REPO_URL);
-            ui.hyperlink_to("WFHelper (original project)", app_meta::ORIGINAL_REPO_URL);
+            ui.hyperlink_to(tr("Source code"), app_meta::REPO_URL);
+            ui.hyperlink_to(tr("WFHelper (original project)"), app_meta::ORIGINAL_REPO_URL);
             ui.hyperlink_to("wf-api-rust", "https://github.com/FluffyPunk/wf-api-rust");
         });
-        m.panel("Data sources", |ui| {
+        m.panel(tr("Data sources"), |ui| {
             let sheet = riven_good_rolls::sheet_url();
             let sources: [(&str, &str, &str); 8] = [
-                ("DE Public Export", constants::PUBLIC_EXPORT_INDEX_URL, "Items, recipes, relics, riven stats"),
-                ("DE world state", constants::WORLD_STATE_URL, "Fissures, events, Baro"),
-                ("warframe.market", constants::WFM_SITE, "Prices, orders, riven auctions"),
-                ("browse.wf", constants::ARBITRATION_SCHEDULE_URL, "Arbitration schedule"),
-                ("drops.warframestat.us", constants::DROPS_URL, "Drop tables"),
-                ("Warframe Wiki", constants::WIKI_BASE, "Item pages"),
-                ("WFHelper assets", constants::ICON_MIRROR_BASE, "Mod and arcane card art"),
-                ("Riven good rolls", &sheet, "Community stat recommendations"),
+                ("DE Public Export", constants::PUBLIC_EXPORT_INDEX_URL, tr("Items, recipes, relics, riven stats")),
+                ("DE world state", constants::WORLD_STATE_URL, tr("Fissures, events, Baro")),
+                ("warframe.market", constants::WFM_SITE, tr("Prices, orders, riven auctions")),
+                ("browse.wf", constants::ARBITRATION_SCHEDULE_URL, tr("Arbitration schedule")),
+                ("drops.warframestat.us", constants::DROPS_URL, tr("Drop tables")),
+                ("Warframe Wiki", constants::WIKI_BASE, tr("Item pages")),
+                ("WFHelper assets", constants::ICON_MIRROR_BASE, tr("Mod and arcane card art")),
+                ("Riven good rolls", &sheet, tr("Community stat recommendations")),
             ];
             for (name, url, what) in sources {
                 ui.horizontal(|ui| {
@@ -380,7 +393,7 @@ impl SettingsView {
                 });
             }
             ui.add_space(4.0);
-            ui.label(RichText::new("Not affiliated with Digital Extremes.").size(11.5).color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("Not affiliated with Digital Extremes.")).size(11.5).color(TEXT_MUTED()));
         });
     }
 }

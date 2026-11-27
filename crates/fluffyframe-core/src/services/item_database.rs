@@ -675,9 +675,12 @@ impl ItemDb {
             Some(r) if !r.system.is_empty() => format!("{} ({})", r.name, r.system),
             Some(r) => r.name.clone(),
             // Railjack nodes are missing from ExportRegions.
-            None => match node.strip_prefix("CrewBattleNode") {
-                Some(n) => format!("Railjack Node {n}"),
-                None => node.to_string(),
+            None => match crate::config::game_tables::railjack_node(node) {
+                Some((name, proxima)) => format!("{name} ({proxima})"),
+                None => match node.strip_prefix("CrewBattleNode") {
+                    Some(n) => format!("Railjack Node {n}"),
+                    None => node.to_string(),
+                },
             },
         }
     }

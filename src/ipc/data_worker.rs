@@ -15,6 +15,7 @@ use fluffyframe_core::services::bounty_cycle::{self, BountyBook};
 use fluffyframe_core::services::{drop_data, market_blueprints, notifications, region_mastery, public_export, riven_good_rolls, wfm_catalog};
 
 use super::{Emitter, Event, Shared, ToastKind};
+use crate::i18n::{tr, trf};
 
 pub enum DataCmd {
     RefreshWorld,
@@ -31,9 +32,9 @@ const CYCLE_CHECK: Duration = Duration::from_secs(10);
 const ARBI_LEAD: chrono::Duration = chrono::Duration::minutes(5);
 
 fn load_game_data(shared: &Shared, emitter: &Emitter) -> Option<Arc<ItemDb>> {
-    emitter.emit(Event::Loading(Some("Loading game data from DE…".into())));
+    emitter.emit(Event::Loading(Some(tr("Loading game data from DE…").into())));
     let result = public_export::load(&|name| {
-        emitter.emit(Event::Loading(Some(format!("Loading game data: {name}"))));
+        emitter.emit(Event::Loading(Some(trf("Loading game data: {}", &[&name]))));
     });
     match result {
         Ok(exports) => {
@@ -47,7 +48,7 @@ fn load_game_data(shared: &Shared, emitter: &Emitter) -> Option<Arc<ItemDb>> {
         }
         Err(e) => {
             log::error!("game data: {e:#}");
-            emitter.toast(ToastKind::Error, format!("Game data failed to load: {e}"));
+            emitter.toast(ToastKind::Error, trf("Game data failed to load: {}", &[&e]));
             None
         }
     }
@@ -56,10 +57,10 @@ fn load_game_data(shared: &Shared, emitter: &Emitter) -> Option<Arc<ItemDb>> {
 pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<DataCmd>) {
     let mut db = load_game_data(&shared, &emitter);
 
-    emitter.emit(Event::Loading(Some("Loading warframe.market catalog…".into())));
+    emitter.emit(Event::Loading(Some(tr("Loading warframe.market catalog…").into())));
     match wfm_catalog::load() {
         Ok(c) => emitter.emit(Event::Catalog(Arc::new(c))),
-        Err(e) => emitter.toast(ToastKind::Error, format!("warframe.market catalog unavailable: {e}")),
+        Err(e) => emitter.toast(ToastKind::Error, trf("warframe.market catalog unavailable: {}", &[&e])),
     }
     emitter.emit(Event::Loading(None));
 
@@ -128,10 +129,10 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<DataCmd>) {
                 next_world = Instant::now();
             }
             Ok(DataCmd::LoadDrops) => {
-                emitter.emit(Event::Loading(Some("Loading drop tables…".into())));
+                emitter.emit(Event::Loading(Some(tr("Loading drop tables…").into())));
                 match drop_data::DropIndex::load() {
                     Ok(d) => emitter.emit(Event::Drops(Arc::new(d))),
-                    Err(e) => emitter.toast(ToastKind::Error, format!("Drop tables unavailable: {e}")),
+                    Err(e) => emitter.toast(ToastKind::Error, trf("Drop tables unavailable: {}", &[&e])),
                 }
                 emitter.emit(Event::Loading(None));
             }
@@ -160,8 +161,8 @@ fn notify_arbitration(shared: &Shared, arbi: &ArbiSchedule, db: &ItemDb, notifie
     {
         let mission = db.regions.get(&slot.node_id).map(|r| r.mission_type.clone()).unwrap_or_default();
         notifications::send(
-            "Favorite arbitration",
-            &format!("{} {} starts at {}", db.node_label(&slot.node_id), mission, slot.start.with_timezone(&chrono::Local).format("%H:%M")),
+            tr("Favorite arbitration"),
+            &trf("{} {} starts at {}", &[&db.node_label(&slot.node_id), &mission, &slot.start.with_timezone(&chrono::Local).format("%H:%M")]),
         );
     }
 }
@@ -171,7 +172,16 @@ fn notify_cycles(shared: &Shared, watch: &mut notifications::CycleWatch, cycles:
         let s = shared.settings.read().unwrap();
         (s.cycle_alerts.clone(), chrono::Duration::minutes(s.cycle_alert_minutes.into()))
     };
-    for (title, body) in watch.check(cycles, &enabled, lead, Utc::now()) {
+    use crate::components::format::cycle_text;
+    for alert in watch.check(cycles, &enabled, lead, Utc::now()) {
+        let (title, body) = match alert {
+            notifications::CycleAlert::Began { cycle, state } => {
+                (trf("{} cycle", &[&cycle_text(cycle)]), trf("{} has begun.", &[&cycle_text(state)]))
+            }
+            notifications::CycleAlert::Ahead { cycle, next, minutes } => {
+                (trf("{} cycle", &[&cycle_text(cycle)]), trf("{} begins in {} min.", &[&cycle_text(next), &minutes]))
+            }
+        };
         notifications::send(&title, &body);
     }
 }
@@ -194,8 +204,8 @@ fn notify_fissures(shared: &Shared, ws: &WorldState, seen: &mut Option<HashSet<S
                 && (!settings.fissure_alert_steel_path || f.steel_path);
             if wanted && !previous.contains(&id) {
                 notifications::send(
-                    "Void fissure",
-                    &format!("{} {}{} on {}", f.tier, f.mission_type, if f.steel_path { " (Steel Path)" } else { "" }, f.node),
+                    tr("Void fissure"),
+                    &trf("{} {}{} on {}", &[&f.tier, &f.mission_type, &(if f.steel_path { tr(" (Steel Path)") } else { "" }), &f.node]),
                 );
             }
         }

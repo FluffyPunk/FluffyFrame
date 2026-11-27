@@ -13,6 +13,8 @@ mod app;
 mod assets;
 mod components;
 mod console;
+mod core_text;
+mod i18n;
 mod image_loader;
 mod ipc;
 mod memory;

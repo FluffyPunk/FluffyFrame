@@ -9,6 +9,7 @@ use crate::components::{archon, format, ui as kit, widgets};
 use crate::ipc::Backend;
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf};
 
 #[derive(Default)]
 pub struct ItemModal {
@@ -30,14 +31,14 @@ fn drops_section(ui: &mut Ui, state: &AppState, db: &ItemDb, unique: &str) {
     }
     let relics: Vec<_> = targets.iter().flat_map(|u| db.relics_dropping(u)).collect();
     if !relics.is_empty() {
-        ui.label(RichText::new("Relics").font(FontId::new(15.0, theme::display_bold())));
+        ui.label(RichText::new(tr("Relics")).font(FontId::new(15.0, theme::display_bold())));
         for (relic, rarity) in relics.iter().take(12) {
             ui.horizontal(|ui| {
                 kit::icon(ui, crate::assets::relic_icon(relic.era.label()), 18.0);
                 ui.label(&relic.name);
-                kit::pill(ui, rarity.label(), TEXT_SECONDARY());
+                kit::pill(ui, tr(rarity.label()), TEXT_SECONDARY());
                 if state.relic_vaulted(&relic.family) == Some(true) {
-                    kit::pill(ui, "Vaulted", NEGATIVE());
+                    kit::pill(ui, tr("Vaulted"), NEGATIVE());
                 }
             });
         }
@@ -45,10 +46,10 @@ fn drops_section(ui: &mut Ui, state: &AppState, db: &ItemDb, unique: &str) {
     }
     let sources = state.drops.as_ref().map(|d| d.lookup(&name).to_vec()).unwrap_or_default();
     if !sources.is_empty() {
-        ui.label(RichText::new("Drops").font(FontId::new(15.0, theme::display_bold())));
+        ui.label(RichText::new(tr("Drops")).font(FontId::new(15.0, theme::display_bold())));
         for s in sources.iter().take(10) {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(&s.location).size(13.0));
+                ui.label(RichText::new(format::drop_location(&s.location)).size(13.0));
                 if !s.detail.is_empty() {
                     ui.label(RichText::new(&s.detail).size(11.5).color(TEXT_MUTED()));
                 }
@@ -74,10 +75,10 @@ fn shards_section(ui: &mut Ui, state: &AppState, unique: &str) {
     if copies.is_empty() {
         return;
     }
-    ui.label(RichText::new("Archon Shards").font(FontId::new(16.0, theme::display_bold())));
+    ui.label(RichText::new(tr("Archon Shards")).font(FontId::new(16.0, theme::display_bold())));
     for (ci, shards) in copies.iter().enumerate() {
         if copies.len() > 1 {
-            ui.label(RichText::new(format!("Copy {}", ci + 1)).size(11.5).family(theme::body_strong()).color(TEXT_MUTED()));
+            ui.label(RichText::new(trf("Copy {}", &[&(ci + 1)])).size(11.5).family(theme::body_strong()).color(TEXT_MUTED()));
         }
         for slot in 0..ARCHON_SHARD_SLOTS.max(shards.len()) {
             let shard = shards.get(slot).and_then(Option::as_ref);
@@ -88,7 +89,7 @@ fn shards_section(ui: &mut Ui, state: &AppState, unique: &str) {
                     ui.set_width(150.0);
                     match shard {
                         Some(s) => ui.label(RichText::new(archon::shard_name(s)).size(13.0).color(TEXT_SECONDARY())),
-                        None => ui.label(RichText::new("None").size(13.0).color(TEXT_MUTED())),
+                        None => ui.label(RichText::new(tr("None")).size(13.0).color(TEXT_MUTED())),
                     };
                 });
                 if let Some(s) = shard {
@@ -151,7 +152,7 @@ impl ItemModal {
             ui.set_width(if wide { 940.0 } else { 620.0 });
             // Top actions.
             ui.horizontal(|ui| {
-                if state.item_stack.len() > 1 && kit::ghost_button(ui, "‹ Back").clicked() {
+                if state.item_stack.len() > 1 && kit::ghost_button(ui, tr("‹ Back")).clicked() {
                     back = true;
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -160,7 +161,7 @@ impl ItemModal {
                     }
                     widgets::wiki_button(ui, &name);
                     let recipe = db.recipe_for_result(&unique).or_else(|| db.recipes.get(&unique));
-                    if recipe.is_some() && kit::chip(ui, self.crafting_tree, if self.crafting_tree { "Back to details" } else { "Crafting Tree" }).clicked() {
+                    if recipe.is_some() && kit::chip(ui, self.crafting_tree, if self.crafting_tree { tr("Back to details") } else { tr("Crafting Tree") }).clicked() {
                         self.crafting_tree = !self.crafting_tree;
                     }
                 });
@@ -168,7 +169,7 @@ impl ItemModal {
 
             if self.crafting_tree {
                 ui.label(RichText::new(&name).font(FontId::new(20.0, theme::display_bold())));
-                kit::caption(ui, "Crafting tree");
+                kit::caption(ui, tr("Crafting tree"));
                 egui::ScrollArea::vertical().max_height(520.0).show(ui, |ui| {
                     let result = db.recipes.get(&unique).map(|r| r.result_type.clone()).unwrap_or(unique.clone());
                     if let Some(r) = db.recipe_for_result(&result) {
@@ -192,35 +193,35 @@ impl ItemModal {
                             ui.label(RichText::new(&name).font(FontId::new(26.0, theme::display_bold())));
                             ui.horizontal_wrapped(|ui| {
                                 if name.contains("Prime") {
-                                    kit::pill(ui, "Prime", ACCENT());
+                                    kit::pill(ui, tr("Prime"), ACCENT());
                                 }
                                 if state.rows.iter().any(|r| r.unique_name == unique && r.vaulted) {
-                                    kit::pill(ui, "Vaulted", NEGATIVE());
+                                    kit::pill(ui, tr("Vaulted"), NEGATIVE());
                                 }
                                 let parent = state.parent(&unique).cloned();
                                 let target = parent.clone().unwrap_or(unique.clone());
                                 if state.mastered.contains(&target) {
-                                    kit::pill(ui, "Mastered", POSITIVE());
+                                    kit::pill(ui, tr("Mastered"), POSITIVE());
                                 }
                                 if parent.as_ref().is_some_and(|p| counts.get(p.as_str()).copied().unwrap_or(0) > 0) {
-                                    kit::pill(ui, "Parent owned", INFO());
+                                    kit::pill(ui, tr("Parent owned"), INFO());
                                 }
                                 if let Some(i) = &info {
-                                    ui.label(RichText::new(i.kind.label()).size(12.0).color(TEXT_MUTED()));
+                                    ui.label(RichText::new(tr(i.kind.label())).size(12.0).color(TEXT_MUTED()));
                                 }
                                 if let Some(p) = parent
-                                    && kit::ghost_button(ui, &format!("Part of {}", db.name(&p))).clicked()
+                                    && kit::ghost_button(ui, &trf("Part of {}", &[&db.name(&p)])).clicked()
                                 {
                                     open_next = Some(p);
                                 }
                             });
                             let owned = counts.get(unique.as_str()).copied().unwrap_or(0);
                             ui.horizontal(|ui| {
-                                ui.label(RichText::new(format!("Owned {}", format::int(owned))).size(12.5).color(TEXT_SECONDARY()));
+                                ui.label(RichText::new(trf("Owned {}", &[&format::int(owned)])).size(12.5).color(TEXT_SECONDARY()));
                                 if let Some(i) = &info
                                     && i.mastery_req > 0
                                 {
-                                    ui.label(RichText::new(format!("MR {}", i.mastery_req)).size(12.5).color(TEXT_SECONDARY()));
+                                    ui.label(RichText::new(trf("MR {}", &[&i.mastery_req])).size(12.5).color(TEXT_SECONDARY()));
                                 }
                             });
                             if let Some(i) = &info
@@ -235,7 +236,7 @@ impl ItemModal {
                     // Components.
                     let recipe = db.recipe_for_result(&unique).or_else(|| db.recipes.get(&unique));
                     if let Some(r) = recipe {
-                        ui.label(RichText::new("Components").font(FontId::new(16.0, theme::display_bold())));
+                        ui.label(RichText::new(tr("Components")).font(FontId::new(16.0, theme::display_bold())));
                         let mut rows: Vec<(String, u64)> = vec![(r.unique_name.clone(), 1)];
                         if db.recipes.contains_key(&unique) {
                             rows.clear();
@@ -267,7 +268,7 @@ impl ItemModal {
                                         ui.label(RichText::new(label).size(15.0));
                                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                             ui.label(RichText::new(format!("{}/{}", have, need)).color(color).family(theme::body_strong()))
-                                                .on_hover_text(if bp_held { "Blueprint owned, not built" } else { "" });
+                                                .on_hover_text(if bp_held { tr("Blueprint owned, not built") } else { "" });
                                         });
                                     });
                                 })
@@ -288,20 +289,20 @@ impl ItemModal {
                         drops_section(ui, state, &db, &unique);
                     }
 
-                    ui.label(RichText::new("Warframe.market").font(FontId::new(16.0, theme::display_bold())));
+                    ui.label(RichText::new(tr("Warframe.market")).font(FontId::new(16.0, theme::display_bold())));
                     match state.catalog.as_ref().and_then(|c| c.by_game_ref(&unique)) {
                         Some(c) => {
                             ui.horizontal(|ui| {
-                                ui.label(RichText::new("48h average").color(TEXT_MUTED()));
+                                ui.label(RichText::new(tr("48h average")).color(TEXT_MUTED()));
                                 kit::plat(ui, state.price_of_unique(&unique), 14.0);
                                 if let Some(d) = info.as_ref().and_then(|i| i.ducats) {
                                     kit::ducats(ui, Some(d), 14.0);
                                 }
-                                widgets::open_link(ui, "Open WFM", &c.market_url());
+                                widgets::open_link(ui, tr("Open WFM"), &c.market_url());
                             });
                         }
                         None => {
-                            ui.label(RichText::new("Item is not tradable.").size(12.5).color(TEXT_MUTED()));
+                            ui.label(RichText::new(tr("Item is not tradable.")).size(12.5).color(TEXT_MUTED()));
                         }
                     }
                 });
@@ -317,7 +318,7 @@ impl ItemModal {
                         });
                         ui.horizontal(|ui| {
                             kit::plat(ui, state.price_of_unique(&comp), 13.0);
-                            if kit::ghost_button(ui, "Open").clicked() {
+                            if kit::ghost_button(ui, tr("Open")).clicked() {
                                 open_next = Some(comp.clone());
                             }
                         });

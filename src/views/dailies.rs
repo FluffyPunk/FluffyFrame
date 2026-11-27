@@ -13,6 +13,7 @@ use crate::components::{format, ui as kit};
 use crate::ipc::Backend;
 use crate::stores::{self, AppState};
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf, trn, tkey};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Group {
@@ -67,60 +68,60 @@ fn tasks(ws: &WorldState, state: &AppState) -> Vec<Task> {
         wiki,
         period,
     };
-    let standing = state.inventory.as_ref().and_then(|i| i.daily_standing).map(|d| format!("{} standing left today", format::int(d.max(0) as u64))).unwrap_or_default();
+    let standing = state.inventory.as_ref().and_then(|i| i.daily_standing).map(|d| trf("{} standing left today", &[&(format::int(d.max(0) as u64))])).unwrap_or_default();
     let sortie = ws.sortie.as_ref();
     let archon = ws.archon_hunt.as_ref();
     let circuit = ws.circuit.as_ref();
     let baro = ws.void_trader.as_ref();
     vec![
-        t("sortie", Group::Daily, "Sortie", sortie.map(|s| format!("Boss: {}", s.boss)).unwrap_or_default(), 1, "Sortie", sortie.and_then(|s| s.expiry)),
-        t("spIncursions", Group::Daily, "Steel Path Incursions", String::new(), 5, "Steel Path", daily),
-        t("simaris", Group::Daily, "Simaris synthesis target", String::new(), 1, "Cephalon Simaris", daily),
-        t("syndicateStanding", Group::Daily, "Syndicate standing cap", standing, 1, "Syndicate", daily),
-        t("dailyFocus", Group::Daily, "Daily Focus cap", String::new(), 1, "Focus", daily),
+        t("sortie", Group::Daily, tr("Sortie"), sortie.map(|s| trf("Boss: {}", &[&s.boss])).unwrap_or_default(), 1, "Sortie", sortie.and_then(|s| s.expiry)),
+        t("spIncursions", Group::Daily, tr("Steel Path Incursions"), String::new(), 5, "Steel Path", daily),
+        t("simaris", Group::Daily, tr("Simaris synthesis target"), String::new(), 1, "Cephalon Simaris", daily),
+        t("syndicateStanding", Group::Daily, tr("Syndicate standing cap"), standing, 1, "Syndicate", daily),
+        t("dailyFocus", Group::Daily, tr("Daily Focus cap"), String::new(), 1, "Focus", daily),
         t(
             "archonHunt",
             Group::Weekly,
-            "Archon Hunt",
-            archon.map(|a| format!("Boss: {} - {} Archon Shard this week", a.boss, world_state::archon_shard(&a.boss))).unwrap_or_default(),
+            tr("Archon Hunt"),
+            archon.map(|a| trf("Boss: {} - {} Archon Shard this week", &[&a.boss, &world_state::archon_shard(&a.boss)])).unwrap_or_default(),
             1,
             "Archon Hunt",
             archon.and_then(|a| a.expiry),
         ),
-        t("circuitNormal", Group::Weekly, "The Circuit", circuit.map(|c| c.normal.join(" - ")).unwrap_or_default(), 1, "The Circuit", weekly),
-        t("circuitSteelPath", Group::Weekly, "The Circuit (Steel Path)", circuit.map(|c| c.steel_path.join(" - ")).unwrap_or_default(), 1, "The Circuit", weekly),
-        t("netracells", Group::Weekly, "Netracells", String::new(), 5, "Netracell", weekly),
-        t("deepArchimedea", Group::Weekly, "Deep Archimedea", String::new(), 1, "Deep Archimedea", weekly),
-        t("temporalArchimedea", Group::Weekly, "Temporal Archimedea", String::new(), 1, "Temporal Archimedea", weekly),
-        t("kahl", Group::Weekly, "Break Narmer (Kahl)", String::new(), 1, "Kahl's Garrison", weekly),
-        t("clem", Group::Weekly, "Help Clem", String::new(), 1, "Clem", weekly),
-        t("ayatanHunt", Group::Weekly, "Ayatan Treasure Hunt", String::new(), 1, "Maroo", weekly),
+        t("circuitNormal", Group::Weekly, tr("The Circuit"), circuit.map(|c| c.normal.join(" - ")).unwrap_or_default(), 1, "The Circuit", weekly),
+        t("circuitSteelPath", Group::Weekly, tr("The Circuit (Steel Path)"), circuit.map(|c| c.steel_path.join(" - ")).unwrap_or_default(), 1, "The Circuit", weekly),
+        t("netracells", Group::Weekly, tr("Netracells"), String::new(), 5, "Netracell", weekly),
+        t("deepArchimedea", Group::Weekly, tr("Deep Archimedea"), String::new(), 1, "Deep Archimedea", weekly),
+        t("temporalArchimedea", Group::Weekly, tr("Temporal Archimedea"), String::new(), 1, "Temporal Archimedea", weekly),
+        t("kahl", Group::Weekly, tr("Break Narmer (Kahl)"), String::new(), 1, "Kahl's Garrison", weekly),
+        t("clem", Group::Weekly, tr("Help Clem"), String::new(), 1, "Clem", weekly),
+        t("ayatanHunt", Group::Weekly, tr("Ayatan Treasure Hunt"), String::new(), 1, "Maroo", weekly),
         t(
             "steelPathHonors",
             Group::Weekly,
-            "Steel Path Honors (Teshin)",
-            ws.steel_path.as_ref().map(|s| format!("{} - {} Steel Essence", s.reward, s.cost)).unwrap_or_default(),
+            tr("Steel Path Honors (Teshin)"),
+            ws.steel_path.as_ref().map(|s| trf("{} - {} Steel Essence", &[&s.reward, &s.cost])).unwrap_or_default(),
             1,
             "Teshin",
             weekly,
         ),
-        t("palladino", Group::Vendors, "Palladino (Iron Wake)", String::new(), 1, "Palladino", weekly),
-        t("acrithis", Group::Vendors, "Acrithis weekly stock", String::new(), 1, "Acrithis", weekly),
+        t("palladino", Group::Vendors, tr("Palladino (Iron Wake)"), String::new(), 1, "Palladino", weekly),
+        t("acrithis", Group::Vendors, tr("Acrithis weekly stock"), String::new(), 1, "Acrithis", weekly),
         t(
             "bird3",
             Group::Vendors,
-            "Bird 3 Archon Shard",
-            archon.map(|a| format!("{} Archon Shard this week", world_state::archon_shard(&a.boss))).unwrap_or_default(),
+            tr("Bird 3 Archon Shard"),
+            archon.map(|a| trf("{} Archon Shard this week", &[&world_state::archon_shard(&a.boss)])).unwrap_or_default(),
             1,
             "Bird 3",
             weekly,
         ),
-        t("yonta", Group::Vendors, "Yonta weekly Kuva trade", String::new(), 1, "Archimedean Yonta", weekly),
+        t("yonta", Group::Vendors, tr("Yonta weekly Kuva trade"), String::new(), 1, "Archimedean Yonta", weekly),
         t(
             "baro",
             Group::Vendors,
-            "Visit Baro Ki'Teer",
-            baro.map(|b| if b.is_active(now) { format!("Here at {}", b.location) } else { format!("Next stop {}", b.location) }).unwrap_or_default(),
+            tr("Visit Baro Ki'Teer"),
+            baro.map(|b| if b.is_active(now) { trf("Here at {}", &[&format::node(&b.location)]) } else { trf("Next stop {}", &[&format::node(&b.location)]) }).unwrap_or_default(),
             1,
             "Baro Ki'Teer",
             baro.and_then(|b| if b.is_active(now) { b.expiry } else { b.activation }),
@@ -128,8 +129,8 @@ fn tasks(ws: &WorldState, state: &AppState) -> Vec<Task> {
         t(
             "varzia",
             Group::Vendors,
-            "Visit Varzia",
-            ws.prime_resurgence.as_ref().map(|p| format!("{} offers", p.total_offers)).unwrap_or_default(),
+            tr("Visit Varzia"),
+            ws.prime_resurgence.as_ref().map(|p| trn("{} offer", "{} offers", (p.total_offers) as u64, &[&p.total_offers])).unwrap_or_default(),
             1,
             "Prime Resurgence",
             ws.prime_resurgence.as_ref().and_then(|p| p.expiry),
@@ -137,7 +138,7 @@ fn tasks(ws: &WorldState, state: &AppState) -> Vec<Task> {
         t(
             "darvo",
             Group::Vendors,
-            "Darvo's deal",
+            tr("Darvo's deal"),
             ws.darvo.as_ref().map(|d| format!("{} - {}p", d.name, d.sale_price)).unwrap_or_default(),
             1,
             "Darvo",
@@ -185,7 +186,7 @@ fn task_row(ui: &mut Ui, row: RowSpec) -> Option<u32> {
                 }
             });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if !wiki.is_empty() && ui.small_button("↗").on_hover_text(format!("{wiki} on the wiki")).clicked() {
+                if !wiki.is_empty() && ui.small_button("↗").on_hover_text(trf("{} on the wiki", &[&wiki])).clicked() {
                     ui.ctx().open_url(egui::OpenUrl::new_tab(format!("https://wiki.warframe.com/w/{}", wiki.replace(' ', "_"))));
                 }
                 if target > 1 {
@@ -200,7 +201,7 @@ fn task_row(ui: &mut Ui, row: RowSpec) -> Option<u32> {
                     ui.label(RichText::new(format::until(Some(t))).size(11.5).color(TEXT_MUTED()));
                 }
                 if let Some(st) = standing {
-                    kit::pill(ui, &format!("{} standing", format::int(st as u64)), ACCENT());
+                    kit::pill(ui, &trf("{} standing", &[&format::int(st as u64)]), ACCENT());
                 }
             });
         });
@@ -225,7 +226,7 @@ fn group_card(ui: &mut Ui, title: &str, done: usize, total: usize, resets: Optio
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if let Some(t) = resets {
-                            ui.label(RichText::new(format!("Resets in {}", format::until(Some(t)))).size(11.5).color(TEXT_MUTED()));
+                            ui.label(RichText::new(trf("Resets in {}", &[&(format::until(Some(t)))])).size(11.5).color(TEXT_MUTED()));
                         }
                     });
                 });
@@ -241,9 +242,9 @@ impl DailiesView {
         let before = s.checklist.clone();
         let all = tasks(ws, state);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Tick off what you have done. Progress resets with each task's own timer.").color(TEXT_SECONDARY()));
+            ui.label(RichText::new(tr("Tick off what you have done. Progress resets with each task's own timer.")).color(TEXT_SECONDARY()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                kit::search(ui, &mut self.search, "Search...", 200.0);
+                kit::search(ui, &mut self.search, tr("Search..."), 200.0);
             });
         });
         ui.add_space(6.0);
@@ -274,7 +275,7 @@ impl DailiesView {
                         }
                     });
                 };
-                render_group(&mut cols[0], Group::Daily, "Daily", Some(world_state::next_daily_reset(now)), &mut s);
+                render_group(&mut cols[0], Group::Daily, tr("Daily"), Some(world_state::next_daily_reset(now)), &mut s);
 
                 // Nightwave acts.
                 if let Some(nw) = &ws.nightwave {
@@ -282,15 +283,15 @@ impl DailiesView {
                     let acts: Vec<_> = nw.challenges.iter().filter(|c| q.is_empty() || c.title.to_lowercase().contains(&q)).collect();
                     let id_of = |c: &fluffyframe_core::services::world_state::NightwaveChallenge| format!("nw:{}", c.title);
                     let done = acts.iter().filter(|c| progress(&s, &id_of(c), c.expiry) >= 1).count();
-                    let header = format!("Season {} ends in {}", nw.season, format::until(nw.expiry));
-                    group_card(ui, "Nightwave", done, acts.len(), None, |ui| {
+                    let header = trf("Season {} ends in {}", &[&nw.season, &format::until(nw.expiry)]);
+                    group_card(ui, tr("Nightwave"), done, acts.len(), None, |ui| {
                         ui.label(RichText::new(header).size(11.5).color(TEXT_MUTED()));
-                        for kind in ["Daily", "Weekly", "Elite Weekly"] {
+                        for kind in [tkey("Daily"), tkey("Weekly"), tkey("Elite Weekly")] {
                             let in_kind: Vec<_> = acts.iter().filter(|c| c.kind == kind).collect();
                             if in_kind.is_empty() {
                                 continue;
                             }
-                            kit::caption(ui, &format!("{kind} acts"));
+                            kit::caption(ui, &trf("{} acts", &[&tr(kind)]));
                             for c in in_kind {
                                 let id = id_of(c);
                                 let n = progress(&s, &id, c.expiry);
@@ -305,8 +306,8 @@ impl DailiesView {
                     });
                 }
 
-                render_group(&mut cols[1], Group::Weekly, "Weekly", Some(world_state::next_weekly_reset(now)), &mut s);
-                render_group(&mut cols[1], Group::Vendors, "Vendors", None, &mut s);
+                render_group(&mut cols[1], Group::Weekly, tr("Weekly"), Some(world_state::next_weekly_reset(now)), &mut s);
+                render_group(&mut cols[1], Group::Vendors, tr("Vendors"), None, &mut s);
             });
         });
         if s.checklist != before {

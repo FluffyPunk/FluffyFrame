@@ -11,6 +11,7 @@ use fluffyframe_core::services::notifications;
 use fluffyframe_core::services::trade_tracker::{TradeEvent, TradeLog};
 
 use super::{Emitter, Event, InventoryCmd, Shared};
+use crate::i18n::{tr, trf};
 
 pub enum LogCmd {
     /// The EE.log path setting changed.
@@ -52,7 +53,7 @@ fn handle(shared: &Shared, emitter: &Emitter, inventory: &Sender<InventoryCmd>, 
         LogEvent::GameStarted => shared.logged_in.store(false, Ordering::Relaxed),
         LogEvent::Whisper(from) => {
             if shared.settings.read().unwrap().notify_whispers {
-                notifications::send("New whisper", &format!("{from} sent you a message"));
+                notifications::send(tr("New whisper"), &trf("{} sent you a message", &[&from]));
             }
         }
         LogEvent::TradeCompleted(trade) => {
@@ -61,11 +62,11 @@ fn handle(shared: &Shared, emitter: &Emitter, inventory: &Sender<InventoryCmd>, 
                 trades.save();
                 if shared.settings.read().unwrap().notify_trades {
                     let what = match trade.kind {
-                        TradeKind::Sale => format!("Sold to {} for {}p", trade.partner, trade.platinum),
-                        TradeKind::Purchase => format!("Bought from {} for {}p", trade.partner, trade.platinum),
-                        TradeKind::Trade => format!("Traded with {}", trade.partner),
+                        TradeKind::Sale => trf("Sold to {} for {}p", &[&trade.partner, &trade.platinum]),
+                        TradeKind::Purchase => trf("Bought from {} for {}p", &[&trade.partner, &trade.platinum]),
+                        TradeKind::Trade => trf("Traded with {}", &[&trade.partner]),
                     };
-                    notifications::send("Trade complete", &what);
+                    notifications::send(tr("Trade complete"), &what);
                 }
                 emitter.emit(Event::Trade(TradeEvent { at, trade: trade.clone() }));
                 let _ = inventory.send(InventoryCmd::GameChanged("trade"));

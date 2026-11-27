@@ -9,6 +9,7 @@ use crate::assets;
 use crate::components::{format, ui as kit};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum TradeFilter {
@@ -41,13 +42,13 @@ struct Metric {
 
 fn metrics() -> [Metric; 7] {
     [
-        Metric { label: "Platinum", icon: Some(assets::PLATINUM), remote: None, get: |d| d.platinum },
-        Metric { label: "Ducats", icon: Some(assets::DUCATS_SMALL), remote: None, get: |d| d.ducats },
-        Metric { label: "Aya", icon: Some(assets::AYA), remote: None, get: |d| d.aya },
-        Metric { label: "Credits", icon: None, remote: None, get: |d| d.credits },
-        Metric { label: "Endo", icon: None, remote: None, get: |d| d.endo },
-        Metric { label: "Vitus Essence", icon: Some(assets::VITUS), remote: None, get: |d| d.vitus },
-        Metric { label: "Kuva", icon: None, remote: Some("/Lotus/Types/Items/MiscItems/Kuva"), get: |d| d.kuva },
+        Metric { label: tr("Platinum"), icon: Some(assets::PLATINUM), remote: None, get: |d| d.platinum },
+        Metric { label: tr("Ducats"), icon: Some(assets::DUCATS_SMALL), remote: None, get: |d| d.ducats },
+        Metric { label: tr("Aya"), icon: Some(assets::AYA), remote: None, get: |d| d.aya },
+        Metric { label: tr("Credits"), icon: None, remote: None, get: |d| d.credits },
+        Metric { label: tr("Endo"), icon: None, remote: None, get: |d| d.endo },
+        Metric { label: tr("Vitus Essence"), icon: Some(assets::VITUS), remote: None, get: |d| d.vitus },
+        Metric { label: tr("Kuva"), icon: None, remote: Some("/Lotus/Types/Items/MiscItems/Kuva"), get: |d| d.kuva },
     ]
 }
 
@@ -78,7 +79,7 @@ fn chart(ui: &mut Ui, points: &[(String, u64, i64)], height: f32) {
     let painter = ui.painter_at(rect);
     let font = FontId::new(10.5, egui::FontFamily::Proportional);
     if points.len() < 2 {
-        painter.text(rect.center(), egui::Align2::CENTER_CENTER, "Not enough days recorded yet", FontId::proportional(12.0), TEXT_MUTED());
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, tr("Not enough days recorded yet"), FontId::proportional(12.0), TEXT_MUTED());
         return;
     }
     let inner = egui::Rect::from_min_max(rect.min + vec2(44.0, 6.0), rect.max - vec2(8.0, 18.0));
@@ -118,7 +119,7 @@ fn chart(ui: &mut Ui, points: &[(String, u64, i64)], height: f32) {
     }
     let step = (points.len() / 6).max(1);
     for (i, (day, _, _)) in points.iter().enumerate().step_by(step) {
-        painter.text(pos2(x(i), inner.bottom() + 4.0), egui::Align2::CENTER_TOP, day_label(day, "%-m/%-d"), font.clone(), TEXT_MUTED());
+        painter.text(pos2(x(i), inner.bottom() + 4.0), egui::Align2::CENTER_TOP, day_label(day, false), font.clone(), TEXT_MUTED());
     }
     if let Some(h) = resp.hover_pos() {
         let i = (((h.x - inner.left()) / gap).round().clamp(0.0, (points.len() - 1) as f32)) as usize;
@@ -129,27 +130,34 @@ fn chart(ui: &mut Ui, points: &[(String, u64, i64)], height: f32) {
         let anchor = egui::PopupAnchor::Position(line[i] + vec2(12.0, -12.0));
         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), resp.id, anchor).show(|ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            ui.label(RichText::new(day_label(day, "%a, %b %-d")).size(11.5).color(TEXT_MUTED()));
+            ui.label(RichText::new(day_label(day, true)).size(11.5).color(TEXT_MUTED()));
             ui.label(RichText::new(format::int(*v)).font(FontId::new(16.0, theme::display_bold())));
             let (text, color) = match d.signum() {
                 1 => (format!("+{}", format::int(d.unsigned_abs())), POSITIVE()),
                 -1 => (format!("−{}", format::int(d.unsigned_abs())), NEGATIVE()),
                 _ => ("±0".to_string(), TEXT_MUTED()),
             };
-            ui.label(RichText::new(format!("{text} that day")).size(12.0).color(color));
+            ui.label(RichText::new(trf("{} that day", &[&text])).size(12.0).color(color));
         });
     }
 }
 
 /// A recorded day ("2026-11-26") in the given chrono format.
-fn day_label(day: &str, fmt: &str) -> String {
-    NaiveDate::parse_from_str(day, "%Y-%m-%d").map(|d| d.format(fmt).to_string()).unwrap_or_else(|_| day.to_string())
+fn day_label(day: &str, long: bool) -> String {
+    use chrono::Datelike;
+    let Ok(d) = NaiveDate::parse_from_str(day, "%Y-%m-%d") else { return day.to_string() };
+    if long {
+        // "Thu, Nov 12" with the names in the interface language.
+        format!("{}, {} {}", format::weekday(d.weekday()), format::month(d.month()), d.day())
+    } else {
+        format!("{}/{}", d.month(), d.day())
+    }
 }
 
 impl StatsView {
     pub fn ui(&mut self, ui: &mut Ui, state: &mut AppState) {
-        kit::page_title(ui, "Stats", None);
-        kit::tabs(ui, &mut 0, &[(0, "Tracking".into())]);
+        kit::page_title(ui, tr("Stats"), None);
+        kit::tabs(ui, &mut 0, &[(0, tr(tr("Tracking")).into())]);
 
         // Trade history docks on the right when the charts still get a usable
         // width beside it; otherwise it goes below them.
@@ -170,7 +178,7 @@ impl StatsView {
                         ui.selectable_value(&mut self.days, d, format!("{d}d"));
                     }
                 });
-                ui.label(RichText::new("Timeframe:").size(12.0).color(TEXT_MUTED()));
+                ui.label(RichText::new(tr("Timeframe:")).size(12.0).color(TEXT_MUTED()));
             });
         });
 
@@ -198,7 +206,7 @@ impl StatsView {
                                     ui.label(RichText::new(m.label.to_uppercase()).font(FontId::new(14.0, theme::display_bold())));
                                     ui.label(RichText::new(format::compact(v)).font(FontId::new(17.0, theme::display_bold())));
                                 });
-                                ui.label(RichText::new(format!("{}{} today", if d >= 0 { "+" } else { "−" }, format::compact(d.unsigned_abs()))).size(11.0).color(TEXT_MUTED()));
+                                ui.label(RichText::new(trf("{}{} today", &[&(if d >= 0 { "+" } else { "−" }), &(format::compact(d.unsigned_abs()))])).size(11.0).color(TEXT_MUTED()));
                             });
                         });
                     }
@@ -232,14 +240,14 @@ impl StatsView {
     }
 
     fn trades(&mut self, ui: &mut Ui, state: &AppState) {
-        kit::caption(ui, "Trade history");
+        kit::caption(ui, tr("Trade history"));
         let count = |k: Option<TradeKind>| state.trades.events.iter().filter(|e| k.is_none_or(|k| e.trade.kind == k)).count();
         egui::Grid::new("trade-filters").num_columns(2).spacing([6.0, 6.0]).show(ui, |ui| {
             for (i, (f, label, k)) in [
-                (TradeFilter::All, "All", None),
-                (TradeFilter::Sale, "Sale", Some(TradeKind::Sale)),
-                (TradeFilter::Purchase, "Purchase", Some(TradeKind::Purchase)),
-                (TradeFilter::Trade, "Trade", Some(TradeKind::Trade)),
+                (TradeFilter::All, tr("All"), None),
+                (TradeFilter::Sale, tr("Sale"), Some(TradeKind::Sale)),
+                (TradeFilter::Purchase, tr("Purchase"), Some(TradeKind::Purchase)),
+                (TradeFilter::Trade, tr("Trade"), Some(TradeKind::Trade)),
             ]
             .into_iter()
             .enumerate()
@@ -257,7 +265,7 @@ impl StatsView {
             }
         });
         ui.add_space(4.0);
-        kit::search(ui, &mut self.trade_search, "Search items or players...", ui.available_width());
+        kit::search(ui, &mut self.trade_search, tr("Search items or players..."), ui.available_width());
         let q = self.trade_search.trim().to_lowercase();
         let list: Vec<_> = state
             .trades
@@ -275,9 +283,9 @@ impl StatsView {
         if list.is_empty() {
             ui.add_space(30.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("No trades recorded yet").family(theme::body_strong()));
+                ui.label(RichText::new(tr("No trades recorded yet")).family(theme::body_strong()));
                 ui.label(
-                    RichText::new("Trades are detected automatically from your game log when you accept a trade in-game. Keep the app running while playing to begin tracking.")
+                    RichText::new(tr("Trades are detected automatically from your game log when you accept a trade in-game. Keep the app running while playing to begin tracking."))
                         .size(12.0)
                         .color(TEXT_MUTED()),
                 );
@@ -290,9 +298,9 @@ impl StatsView {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         let (label, color) = match t.trade.kind {
-                            TradeKind::Sale => ("Sale", POSITIVE()),
-                            TradeKind::Purchase => ("Purchase", NEGATIVE()),
-                            TradeKind::Trade => ("Trade", INFO()),
+                            TradeKind::Sale => (tr("Sale"), POSITIVE()),
+                            TradeKind::Purchase => (tr("Purchase"), NEGATIVE()),
+                            TradeKind::Trade => (tr("Trade"), INFO()),
                         };
                         kit::pill(ui, label, color);
                         ui.label(RichText::new(&t.trade.partner).family(theme::body_strong()));

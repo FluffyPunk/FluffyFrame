@@ -26,6 +26,7 @@ use egui::Ui;
 
 use crate::ipc::Backend;
 use crate::stores::AppState;
+use crate::i18n::tr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewName {
@@ -85,19 +86,19 @@ impl ViewName {
 
     pub fn label(self) -> &'static str {
         match self {
-            ViewName::Setup => "Setup",
-            ViewName::Dashboard => "Dashboard",
-            ViewName::Inventory => "Inventory",
-            ViewName::Foundry => "Foundry",
-            ViewName::Mastery => "Mastery",
-            ViewName::Stats => "Stats",
-            ViewName::World => "World",
-            ViewName::Syndicates => "Syndicates",
-            ViewName::Market => "Market",
-            ViewName::Relics => "Relics",
-            ViewName::Wiki => "Wiki",
-            ViewName::Rivens => "Rivens",
-            ViewName::Settings => "Settings",
+            ViewName::Setup => tr("Setup"),
+            ViewName::Dashboard => tr("Dashboard"),
+            ViewName::Inventory => tr("Inventory"),
+            ViewName::Foundry => tr("Foundry"),
+            ViewName::Mastery => tr("Mastery"),
+            ViewName::Stats => tr("Stats"),
+            ViewName::World => tr("World"),
+            ViewName::Syndicates => tr("Syndicates"),
+            ViewName::Market => tr("Market"),
+            ViewName::Relics => tr("Relics"),
+            ViewName::Wiki => tr("Wiki"),
+            ViewName::Rivens => tr("Rivens"),
+            ViewName::Settings => tr("Settings"),
         }
     }
 
@@ -151,7 +152,8 @@ pub fn need_game_data(ui: &mut Ui, state: &AppState) -> bool {
     if state.db.is_some() {
         return false;
     }
-    crate::components::ui::empty(ui, "Loading game data…", state.loading.as_deref().unwrap_or("Fetching DE's public export"));
+    let detail = state.loading.as_deref().unwrap_or(tr("Fetching DE's public export"));
+    crate::components::ui::empty(ui, tr("Loading game data…"), detail);
     true
 }
 
@@ -165,8 +167,8 @@ pub fn need_inventory(ui: &mut Ui, state: &AppState) -> bool {
     }
     crate::components::ui::empty(
         ui,
-        "No inventory yet",
-        "Start Warframe with the game source selected, or import an inventory in Settings.",
+        tr("No inventory yet"),
+        tr("Start Warframe with the game source selected, or import an inventory in Settings."),
     );
     true
 }

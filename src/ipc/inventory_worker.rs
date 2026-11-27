@@ -13,6 +13,7 @@ use fluffyframe_core::services::api_helper_runner::{self, HelperStatus};
 use fluffyframe_core::services::inventory_import;
 
 use super::{Emitter, Event, Shared, ToastKind};
+use crate::i18n::{tr, trf};
 
 pub enum InventoryCmd {
     /// Read from the game now.
@@ -66,17 +67,17 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<InventoryCmd>) {
                     Ok((inv, source)) => {
                         shared.settings.write().unwrap().inventory_source = source;
                         let _ = shared.settings.read().unwrap().save();
-                        emitter.toast(ToastKind::Success, format!("Imported {}", source.label().to_lowercase()));
+                        emitter.toast(ToastKind::Success, trf("Imported {}", &[&tr(source.label()).to_lowercase()]));
                         emitter.emit(Event::Inventory(Arc::new(inv)));
                     }
-                    Err(e) => emitter.toast(ToastKind::Error, format!("Import failed: {e}")),
+                    Err(e) => emitter.toast(ToastKind::Error, trf("Import failed: {}", &[&e])),
                 }
                 continue;
             }
             Ok(InventoryCmd::Export(path)) => {
                 match inventory_import::export_to(&path) {
-                    Ok(()) => emitter.toast(ToastKind::Success, format!("Exported to {}", path.display())),
-                    Err(e) => emitter.toast(ToastKind::Error, format!("Export failed: {e}")),
+                    Ok(()) => emitter.toast(ToastKind::Success, trf("Exported to {}", &[&path.display()])),
+                    Err(e) => emitter.toast(ToastKind::Error, trf("Export failed: {}", &[&e])),
                 }
                 continue;
             }
@@ -110,7 +111,7 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<InventoryCmd>) {
                 status.last_failure = None;
                 status.last_error = None;
                 emitter.emit(Event::Inventory(Arc::new(inv)));
-                emitter.toast(ToastKind::Info, "Inventory updated from the game");
+                emitter.toast(ToastKind::Info, tr("Inventory updated from the game"));
                 Ok(())
             }
             Err((failure, message)) => {

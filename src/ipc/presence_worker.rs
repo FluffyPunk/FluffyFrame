@@ -13,6 +13,7 @@ use fluffyframe_core::services::wfm_client;
 use fluffyframe_core::services::wfm_presence::{self, WfmStatus};
 
 use super::{Emitter, Event, Shared, ToastKind};
+use crate::i18n::{tr, trf};
 
 pub enum PresenceCmd {
     Set(WfmStatus),
@@ -85,7 +86,7 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<PresenceCmd>) {
                     p.game_override = None;
                     push(&mut p, &emitter, &s.token, status);
                 }
-                None => emitter.toast(ToastKind::Error, "Sign in to warframe.market first"),
+                None => emitter.toast(ToastKind::Error, tr("Sign in to warframe.market first")),
             },
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
@@ -117,6 +118,6 @@ fn push(p: &mut Presence, emitter: &Emitter, token: &str, status: WfmStatus) {
             p.status = Some(status);
             emitter.emit(Event::WfmStatus(p.status));
         }
-        Err(e) => emitter.toast(ToastKind::Error, format!("warframe.market status: {e}")),
+        Err(e) => emitter.toast(ToastKind::Error, trf("warframe.market status: {}", &[&e])),
     }
 }

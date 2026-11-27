@@ -14,6 +14,7 @@ use crate::components::{format, ui as kit};
 use crate::ipc::{Backend, MarketCmd};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf, tkey};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Tab {
@@ -36,11 +37,11 @@ enum Sort {
 
 impl Sort {
     const ALL: [(Sort, &'static str); 5] = [
-        (Sort::Name, "Name"),
-        (Sort::Disposition, "Disposition"),
-        (Sort::Rerolls, "Rerolls"),
-        (Sort::Grade, "Grade"),
-        (Sort::AttrGrade, "Attribute grade"),
+        (Sort::Name, tkey("Name")),
+        (Sort::Disposition, tkey("Disposition")),
+        (Sort::Rerolls, tkey("Rerolls")),
+        (Sort::Grade, tkey("Grade")),
+        (Sort::AttrGrade, tkey("Attribute grade")),
     ];
 }
 
@@ -154,15 +155,15 @@ impl RivensView {
         let unveiled = self.decoded.as_ref().map(|d| d.list.len()).unwrap_or(0);
         let veiled_count = inv.as_ref().map(|i| veiled_challenges(i).len() as u64 + unrevealed(i).iter().map(|(_, n)| n).sum::<u64>()).unwrap_or(0);
 
-        kit::page_title(ui, "Rivens", None);
+        kit::page_title(ui, tr("Rivens"), None);
         kit::tabs(
             ui,
             &mut self.tab,
             &[
-                (Tab::Unveiled, format!("Unveiled ({unveiled})")),
-                (Tab::Veiled, format!("Veiled ({veiled_count})")),
-                (Tab::Finder, "Riven Finder".into()),
-                (Tab::Calculator, "Calculator".into()),
+                (Tab::Unveiled, trf(tr("Unveiled ({})"), &[&unveiled])),
+                (Tab::Veiled, trf(tr("Veiled ({})"), &[&veiled_count])),
+                (Tab::Finder, tr(tr("Riven Finder")).into()),
+                (Tab::Calculator, tr(tr("Calculator")).into()),
             ],
         );
         let mut lookup = None;
@@ -210,7 +211,7 @@ impl RivensView {
 
     fn unveiled(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend, lookup: &mut Option<(String, String)>) {
         if state.inventory.is_none() {
-            kit::empty(ui, "No inventory", "Load an inventory to see your rivens.");
+            kit::empty(ui, tr("No inventory"), tr("Load an inventory to see your rivens."));
             return;
         }
         let Some(decoded) = self.decoded.take() else {
@@ -247,7 +248,7 @@ impl RivensView {
         });
 
         if list.is_empty() {
-            kit::empty(ui, "No rivens", "No unveiled rivens match these filters.");
+            kit::empty(ui, tr("No rivens"), tr("No unveiled rivens match these filters."));
         }
         let mut clicked: Option<usize> = None;
         let compact = backend.shared.settings.read().unwrap().riven_compact;
@@ -293,36 +294,36 @@ impl RivensView {
         // One wrapping row, left to right: a right-aligned group overflows
         // leftwards over the search box on narrow windows.
         ui.horizontal_wrapped(|ui| {
-            kit::search(ui, &mut self.search, "Search...", 220.0);
-            kit::labelled(ui, "Sort", |ui| {
-                let label = Sort::ALL.iter().find(|(s, _)| *s == self.sort).map(|(_, l)| *l).unwrap_or("");
+            kit::search(ui, &mut self.search, tr("Search..."), 220.0);
+            kit::labelled(ui, tr("Sort"), |ui| {
+                let label = Sort::ALL.iter().find(|(s, _)| *s == self.sort).map(|(_, l)| tr(l)).unwrap_or("");
                 egui::ComboBox::from_id_salt("riven-sort").width(130.0).selected_text(label).show_ui(ui, |ui| {
                     for (s, l) in Sort::ALL {
-                        ui.selectable_value(&mut self.sort, s, l);
+                        ui.selectable_value(&mut self.sort, s, tr(l));
                     }
                 });
             });
-            if kit::chip(ui, true, if self.descending { "⬇" } else { "⬆" }).on_hover_text("Sort direction").clicked() {
+            if kit::chip(ui, true, if self.descending { "⬇" } else { "⬆" }).on_hover_text(tr("Sort direction")).clicked() {
                 self.descending = !self.descending;
             }
             let mut t = self.type_filter;
-            let options: Vec<(&'static str, &str)> = TYPES.iter().map(|t| (*t, *t)).collect();
+            let options: Vec<(&'static str, &str)> = TYPES.iter().map(|t| (*t, tr(t))).collect();
             if kit::segmented(ui, &mut t, &options) {
                 self.type_filter = t;
             }
-            kit::labelled(ui, "Grade", |ui| {
-                egui::ComboBox::from_id_salt("riven-grade").width(60.0).selected_text(self.grade_filter).show_ui(ui, |ui| {
+            kit::labelled(ui, tr("Grade"), |ui| {
+                egui::ComboBox::from_id_salt("riven-grade").width(60.0).selected_text(tr(self.grade_filter)).show_ui(ui, |ui| {
                     for g in GRADES {
-                        ui.selectable_value(&mut self.grade_filter, g, g);
+                        ui.selectable_value(&mut self.grade_filter, g, tr(g));
                     }
                 });
             });
-            kit::labelled(ui, "Attribute grade", |ui| {
-                let attr_label = self.attr_filter.map(AttrGrade::label).unwrap_or("All");
+            kit::labelled(ui, tr("Attribute grade"), |ui| {
+                let attr_label = self.attr_filter.map_or(tr("All"), |g| tr(g.label()));
                 egui::ComboBox::from_id_salt("riven-attr").width(80.0).selected_text(attr_label).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.attr_filter, None, "All");
+                    ui.selectable_value(&mut self.attr_filter, None, tr("All"));
                     for g in AttrGrade::ALL {
-                        ui.selectable_value(&mut self.attr_filter, Some(g), g.label());
+                        ui.selectable_value(&mut self.attr_filter, Some(g), tr(g.label()));
                     }
                 });
             });
@@ -345,38 +346,38 @@ impl RivensView {
     /// "Sell on warframe.market": direct sale or auction for the open riven,
     /// at its current rank and card values.
     fn sell_panel(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend, riven: &OwnedRiven, d: &DecodedRiven, slug: Option<&str>) {
-        ui.label(RichText::new("Sell on warframe.market").font(FontId::new(16.0, theme::display_bold())).color(TEXT()));
+        ui.label(RichText::new(tr("Sell on warframe.market")).font(FontId::new(16.0, theme::display_bold())).color(TEXT()));
         ui.add_space(4.0);
         if state.session.is_none() {
-            ui.label(RichText::new("Sign in to warframe.market on the Market page to list rivens.").color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("Sign in to warframe.market on the Market page to list rivens.")).color(TEXT_MUTED()));
             return;
         }
         let Some(slug) = slug else {
-            ui.label(RichText::new("warframe.market doesn't list rivens for this weapon.").color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("warframe.market doesn't list rivens for this weapon.")).color(TEXT_MUTED()));
             return;
         };
         let f = &mut self.sell;
         egui::Frame::new().fill(BG_WELL()).corner_radius(RADIUS_MD()).inner_margin(Margin::same(10)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_wrapped(|ui| {
-                kit::segmented(ui, &mut f.auction, &[(false, "Direct sale"), (true, "Auction")]);
-                kit::labelled(ui, if f.auction { "Starting price" } else { "Price" }, |ui| {
+                kit::segmented(ui, &mut f.auction, &[(false, tr(tr("Direct sale"))), (true, tr(tr("Auction")))]);
+                kit::labelled(ui, if f.auction { tr("Starting price") } else { tr("Price") }, |ui| {
                     ui.add(egui::DragValue::new(&mut f.price).range(0..=100_000).suffix(" p"))
                 });
                 if f.auction {
-                    kit::labelled(ui, "Buyout", |ui| {
-                        ui.add(egui::DragValue::new(&mut f.buyout).range(0..=100_000).custom_formatter(|v, _| if v == 0.0 { "none".into() } else { format!("{v} p") }))
+                    kit::labelled(ui, tr("Buyout"), |ui| {
+                        ui.add(egui::DragValue::new(&mut f.buyout).range(0..=100_000).custom_formatter(|v, _| if v == 0.0 { tr("none").into() } else { format!("{v} p") }))
                     });
-                    kit::labelled(ui, "Min. reputation", |ui| ui.add(egui::DragValue::new(&mut f.min_reputation).range(0..=10_000)));
+                    kit::labelled(ui, tr("Min. reputation"), |ui| ui.add(egui::DragValue::new(&mut f.min_reputation).range(0..=10_000)));
                 }
-                ui.checkbox(&mut f.private, "Private").on_hover_text("Hidden from search until you make it public on warframe.market");
+                ui.checkbox(&mut f.private, tr("Private")).on_hover_text(tr("Hidden from search until you make it public on warframe.market"));
             });
             ui.add_space(6.0);
-            ui.add(egui::TextEdit::singleline(&mut f.note).hint_text("Note (optional)").desired_width(f32::INFINITY));
+            ui.add(egui::TextEdit::singleline(&mut f.note).hint_text(tr("Note (optional)")).desired_width(f32::INFINITY));
             ui.add_space(6.0);
             let invalid = f.price == 0 || (f.auction && f.buyout > 0 && f.buyout < f.price);
             ui.horizontal(|ui| {
-                let label = if f.auction { "List auction" } else { "List for sale" };
+                let label = if f.auction { tr("List auction") } else { tr("List for sale") };
                 if ui.add_enabled_ui(!invalid, |ui| kit::primary_button(ui, label)).inner.clicked() {
                     let kind = if f.auction {
                         rivens_wfm::ListingKind::Auction { starting: f.price, buyout: (f.buyout > 0).then_some(f.buyout), min_reputation: f.min_reputation }
@@ -397,11 +398,11 @@ impl RivensView {
                     })));
                 }
                 let hint = if f.price == 0 {
-                    "Set a price.".to_string()
+                    tr("Set a price.").to_string()
                 } else if invalid {
-                    "Buyout must be at least the starting price.".to_string()
+                    tr("Buyout must be at least the starting price.").to_string()
                 } else {
-                    format!("Lists rank {} with its current stats.", riven.rank)
+                    trf("Lists rank {} with its current stats.", &[&riven.rank])
                 };
                 ui.label(RichText::new(hint).size(12.0).color(TEXT_MUTED()));
             });
@@ -465,7 +466,7 @@ impl RivensView {
                         close = true;
                     }
                     if let Some(slug) = self.slug_for(state, riven)
-                        && kit::ghost_button(ui, "Riven Finder").on_hover_text("Search live auctions for this weapon").clicked()
+                        && kit::ghost_button(ui, tr("Riven Finder")).on_hover_text(tr("Search live auctions for this weapon")).clicked()
                     {
                         *lookup = Some((slug, d.weapon_name.clone()));
                         close = true;
@@ -473,13 +474,13 @@ impl RivensView {
                 });
             });
             ui.horizontal_wrapped(|ui| {
-                kit::pill(ui, &format!("{} Riven", riven.riven_type), TEXT_SECONDARY());
+                kit::pill(ui, &trf("{} Riven", &[&riven.riven_type]), TEXT_SECONDARY());
                 ui.label(RichText::new(format!("{} {:.2}", dispo_stars(d.disposition), d.disposition)).color(ACCENT()))
-                    .on_hover_text(format!("Disposition {:.3}", d.disposition));
-                ui.label(RichText::new(format!("Rerolls {}", riven.rerolls)).color(REROLL));
-                ui.label(RichText::new(format!("Rank {}/{}", riven.rank, MAX_RANK)).color(TEXT_SECONDARY()));
+                    .on_hover_text(trf("Disposition {}", &[&format!("{:.3}", d.disposition)]));
+                ui.label(RichText::new(trf("Rerolls {}", &[&riven.rerolls])).color(REROLL));
+                ui.label(RichText::new(trf("Rank {}/{}", &[&riven.rank, &MAX_RANK])).color(TEXT_SECONDARY()));
                 if riven.mastery_req > 0 {
-                    ui.label(RichText::new(format!("MR {}", riven.mastery_req)).color(TEXT_SECONDARY()));
+                    ui.label(RichText::new(trf("MR {}", &[&riven.mastery_req])).color(TEXT_SECONDARY()));
                 }
             });
             ui.add_space(10.0);
@@ -489,31 +490,31 @@ impl RivensView {
                 let half = (ui.available_width() - 40.0) / 2.0;
                 ui.horizontal_top(|ui| {
                     summary_tile(ui, half, |ui| {
-                        kit::caption(ui, "Roll quality");
+                        kit::caption(ui, tr("Roll quality"));
                         ui.label(RichText::new(d.grade).font(FontId::new(22.0, theme::display_bold())).color(grade_color(d.grade)));
-                        ui.label(RichText::new(format!("{}% perfect", (d.perfect * 100.0).round())).color(TEXT_SECONDARY()));
+                        ui.label(RichText::new(trf("{}% perfect", &[&((d.perfect * 100.0).round())])).color(TEXT_SECONDARY()));
                     });
                     summary_tile(ui, half, |ui| {
-                        kit::caption(ui, "Attributes");
+                        kit::caption(ui, tr("Attributes"));
                         match d.attr_grade {
-                            Some(g) => ui.label(RichText::new(g.label()).font(FontId::new(22.0, theme::display_bold())).color(attr_color(g))),
-                            None => ui.label(RichText::new("?").font(FontId::new(22.0, theme::display_bold())).color(TEXT_MUTED())).on_hover_text("No good-roll data for this weapon"),
+                            Some(g) => ui.label(RichText::new(tr(g.label())).font(FontId::new(22.0, theme::display_bold())).color(attr_color(g))),
+                            None => ui.label(RichText::new("?").font(FontId::new(22.0, theme::display_bold())).color(TEXT_MUTED())).on_hover_text(tr("No good-roll data for this weapon")),
                         };
                         let (b, c) = (riven.buffs.len(), riven.curses.len());
                         let mut text = format!("{b} buff{}", if b == 1 { "" } else { "s" });
                         if c > 0 {
-                            text += ", 1 curse";
+                            text += tr(", 1 curse");
                         }
                         ui.label(RichText::new(text).color(TEXT_SECONDARY()));
                         if let Some(endo) = d.dissolve_hint(riven) {
                             kit::icon(ui, assets::ENDO, 14.0);
-                            ui.label(RichText::new(format!("Dissolves for {endo}")).size(12.5).color(TEXT_SECONDARY()));
+                            ui.label(RichText::new(trf("Dissolves for {}", &[&endo])).size(12.5).color(TEXT_SECONDARY()));
                         }
                     });
                 });
 
                 // Stats with roll bars.
-                section_title(ui, "Attributes");
+                section_title(ui, tr("Attributes"));
                 for stat in &d.stats {
                     let color = if stat.positive { POSITIVE() } else { NEGATIVE() };
                     egui::Frame::new().fill(alpha(color, 0.06)).corner_radius(RADIUS_MD()).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
@@ -532,7 +533,7 @@ impl RivensView {
                                     kit::progress(ui, quality as f32, color, 5.0);
                                 })
                                 .response
-                                .on_hover_text(format!("{:.0}% of the roll range", quality * 100.0));
+                                .on_hover_text(trf("{}% of the roll range", &[&format!("{:.0}", quality * 100.0)]));
                             });
                         });
                     });
@@ -540,7 +541,7 @@ impl RivensView {
                 }
 
                 // Community good rolls for this weapon.
-                section_title(ui, &format!("Best attributes for {}", d.weapon_name));
+                section_title(ui, &trf("Best attributes for {}", &[&d.weapon_name]));
                 let data = state.good_rolls.as_ref().zip(state.db.as_ref()).and_then(|(g, db)| Some((g.get(&d.weapon_name, &db.rivens)?, db)));
                 match data {
                     Some((data, db)) => {
@@ -549,15 +550,15 @@ impl RivensView {
                         let buffs: Vec<String> = riven.buffs.iter().map(|b| sheet_tag(&b.tag)).collect();
                         let curses: Vec<String> = riven.curses.iter().map(|c| sheet_tag(&c.tag)).collect();
                         ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new("Wanted:").size(12.5).color(TEXT_SECONDARY()));
+                            ui.label(RichText::new(tr("Wanted:")).size(12.5).color(TEXT_SECONDARY()));
                             for tag in data.wanted() {
                                 tag_chip(ui, &label(tag), buffs.iter().any(|b| b == tag));
                             }
                         });
                         ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new("Accepted curses:").size(12.5).color(TEXT_SECONDARY()));
+                            ui.label(RichText::new(tr("Accepted curses:")).size(12.5).color(TEXT_SECONDARY()));
                             if data.accepted_bad.is_empty() {
-                                ui.label(RichText::new("none").size(12.0).color(TEXT_MUTED()));
+                                ui.label(RichText::new(tr("none")).size(12.0).color(TEXT_MUTED()));
                             }
                             for tag in &data.accepted_bad {
                                 tag_chip(ui, &label(tag), curses.iter().any(|c| c == tag));
@@ -565,7 +566,7 @@ impl RivensView {
                         });
                     }
                     None => {
-                        ui.label(RichText::new("No good-roll data for this weapon.").color(TEXT_MUTED()));
+                        ui.label(RichText::new(tr("No good-roll data for this weapon.")).color(TEXT_MUTED()));
                     }
                 }
 
@@ -577,8 +578,8 @@ impl RivensView {
                 // Similar live listings.
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Similar on warframe.market").font(FontId::new(16.0, theme::display_bold())).color(TEXT()));
-                    if kit::chip(ui, !self.direct_only, "Auctions").on_hover_text("Include bidding auctions, not only direct sales").clicked() {
+                    ui.label(RichText::new(tr("Similar on warframe.market")).font(FontId::new(16.0, theme::display_bold())).color(TEXT()));
+                    if kit::chip(ui, !self.direct_only, tr("Auctions")).on_hover_text(tr("Include bidding auctions, not only direct sales")).clicked() {
                         self.direct_only = !self.direct_only;
                     }
                 });
@@ -587,11 +588,11 @@ impl RivensView {
                     None if slug.is_some() => {
                         ui.horizontal(|ui| {
                             ui.spinner();
-                            ui.label(RichText::new("Searching auctions…").color(TEXT_MUTED()));
+                            ui.label(RichText::new(tr("Searching auctions…")).color(TEXT_MUTED()));
                         });
                     }
                     None => {
-                        ui.label(RichText::new("warframe.market has no riven listings for this weapon.").color(TEXT_MUTED()));
+                        ui.label(RichText::new(tr("warframe.market has no riven listings for this weapon.")).color(TEXT_MUTED()));
                     }
                     Some(auctions) => {
                         let mine: Vec<&str> = d.stats.iter().map(|s| s.tag.as_str()).collect();
@@ -607,7 +608,7 @@ impl RivensView {
                             .collect();
                         similar.sort_by(|a, b| b.0.cmp(&a.0).then(a.2.price().unwrap_or(u32::MAX).cmp(&b.2.price().unwrap_or(u32::MAX))));
                         if similar.is_empty() {
-                            ui.label(RichText::new("No similar rivens listed.").color(TEXT_MUTED()));
+                            ui.label(RichText::new(tr("No similar rivens listed.")).color(TEXT_MUTED()));
                         }
                         let shown = if self.show_all_listings { similar.len() } else { similar.len().min(20) };
                         for (pct, matched, a) in &similar[..shown] {
@@ -627,7 +628,7 @@ impl RivensView {
                                         }
                                     });
                                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                        if ui.small_button("WFM ↗").clicked() {
+                                        if ui.small_button(tr("WFM ↗")).clicked() {
                                             ui.ctx().open_url(egui::OpenUrl::new_tab(a.url()));
                                         }
                                         ui.label(RichText::new(&a.owner).size(12.0).color(TEXT_MUTED()));
@@ -637,7 +638,7 @@ impl RivensView {
                             ui.add_space(3.0);
                         }
                         if similar.len() > 20 {
-                            let label = if self.show_all_listings { "Show fewer".to_string() } else { format!("Show all {} · {} more", similar.len(), similar.len() - 20) };
+                            let label = if self.show_all_listings { tr("Show fewer").to_string() } else { trf("Show all {} · {} more", &[&similar.len(), &(similar.len() - 20)]) };
                             if kit::ghost_button(ui, &label).clicked() {
                                 self.show_all_listings = !self.show_all_listings;
                             }
@@ -674,11 +675,11 @@ fn riven_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven) -> bool {
     shadow_text(ui, at(0.85, 0.10), Align2::RIGHT_TOP, d.grade, FontId::new(16.0 * s, theme::display_bold()), grade_color(d.grade));
     match d.attr_grade {
         Some(g) => {
-            shadow_text(ui, at(0.87, 0.155), Align2::RIGHT_TOP, g.label().to_uppercase(), FontId::new(9.6 * s, theme::body_strong()), attr_color(g));
+            shadow_text(ui, at(0.87, 0.155), Align2::RIGHT_TOP, tr(g.label()).to_uppercase(), FontId::new(9.6 * s, theme::body_strong()), attr_color(g));
         }
         None => {
             let r = shadow_text(ui, at(0.87, 0.155), Align2::RIGHT_TOP, "?", FontId::new(9.6 * s, theme::body_strong()), TEXT_MUTED());
-            ui.interact(r, card_id.with("attr"), Sense::hover()).on_hover_text("No good-roll data for this weapon");
+            ui.interact(r, card_id.with("attr"), Sense::hover()).on_hover_text(tr("No good-roll data for this weapon"));
         }
     }
     if let Some(endo) = d.dissolve_hint(riven) {
@@ -690,7 +691,7 @@ fn riven_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven) -> bool {
         ui.painter().rect(chip, 99.0, alpha(BG_DEEP(), 0.8), Stroke::new(1.0, BORDER()), egui::StrokeKind::Inside);
         egui::Image::new(assets::ENDO).paint_at(ui, Rect::from_center_size(pos2(chip.left() + 6.0 + icon / 2.0, chip.center().y), vec2(icon, icon)));
         ui.painter().galley(pos2(chip.left() + 6.0 + icon + 4.0, chip.top() + 2.0), galley, TEXT_SECONDARY());
-        ui.interact(chip, card_id.with("endo"), Sense::hover()).on_hover_text(format!("Dissolves for {endo} Endo"));
+        ui.interact(chip, card_id.with("endo"), Sense::hover()).on_hover_text(trf("Dissolves for {} Endo", &[&endo]));
     }
 
     // Weapon name and generated suffix, centred.
@@ -742,7 +743,7 @@ fn riven_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven) -> bool {
     // MR · polarity · rerolls: a row starting at 83.5% with 12px text centred in it.
     let meta_y = card.top() + h * 0.835 + 6.0;
     let meta_font = FontId::new(12.0 * s, theme::body_strong());
-    shadow_text(ui, pos2(card.left() + w * 0.22, meta_y), Align2::LEFT_CENTER, format!("MR {}", riven.mastery_req), meta_font.clone(), TEXT_SECONDARY());
+    shadow_text(ui, pos2(card.left() + w * 0.22, meta_y), Align2::LEFT_CENTER, trf("MR {}", &[&riven.mastery_req]), meta_font.clone(), TEXT_SECONDARY());
     if let Some(icon) = riven.polarity.as_deref().and_then(assets::polarity_icon) {
         let r = Rect::from_center_size(pos2(card.center().x, meta_y - 2.0), vec2(14.0 * s, 14.0 * s));
         egui::Image::new(icon).tint(TEXT()).paint_at(ui, r);
@@ -771,7 +772,7 @@ fn riven_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven) -> bool {
     // Copy chat tag, top left (above the card so it takes the click).
     copy_tag_button(ui, Rect::from_min_size(at(0.13, 0.09), vec2(30.0 * s, 30.0 * s)), card_id.with("copy"), d);
 
-    resp.on_hover_text("Open riven details").clicked()
+    resp.on_hover_text(tr("Open riven details")).clicked()
 }
 
 /// Copies the riven's chat tag ("[Soma Crita-visicron]"): two overlapping
@@ -786,7 +787,7 @@ fn copy_tag_button(ui: &Ui, rect: Rect, id: egui::Id, d: &DecodedRiven) {
     ui.painter().rect_stroke(Rect::from_min_max(g.min + g.size() * 0.35, g.max), 2.0, stroke, egui::StrokeKind::Inside);
     ui.painter().rect_stroke(Rect::from_min_max(g.min, g.max - g.size() * 0.35), 2.0, stroke, egui::StrokeKind::Inside);
     let tag = format!("[{} {}]", d.weapon_name, d.suffix).replace(" ]", "]");
-    if resp.on_hover_text(format!("Copy chat tag {tag}")).clicked() {
+    if resp.on_hover_text(trf("Copy chat tag {}", &[&tag])).clicked() {
         ui.ctx().copy_text(tag);
     }
 }
@@ -807,7 +808,8 @@ fn compact_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven, image: Option
             ui.spacing_mut().item_spacing = vec2(6.0, 0.0);
             // Image, names (truncated), grades: fixed side columns, so the
             // names get the width that's left.
-            const GRADE_W: f32 = 34.0;
+            // Room for the longest attribute grade in any language ("ПОГАНО").
+            const GRADE_W: f32 = 46.0;
             ui.horizontal_top(|ui| {
                 kit::remote_image(ui, image, vec2(40.0, 40.0));
                 let names_w = (ui.available_width() - GRADE_W - ui.spacing().item_spacing.x).max(20.0);
@@ -823,8 +825,8 @@ fn compact_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven, image: Option
                     ui.label(RichText::new(d.grade).font(FontId::new(14.0, theme::display_bold())).color(grade_color(d.grade)));
                     let font = FontId::new(10.0, theme::display_bold());
                     match d.attr_grade {
-                        Some(g) => ui.label(RichText::new(g.label().to_uppercase()).font(font).color(attr_color(g))),
-                        None => ui.label(RichText::new("?").font(font).color(TEXT_MUTED())).on_hover_text("No good-roll data for this weapon"),
+                        Some(g) => ui.label(RichText::new(tr(g.label()).to_uppercase()).font(font).color(attr_color(g))),
+                        None => ui.label(RichText::new("?").font(font).color(TEXT_MUTED())).on_hover_text(tr("No good-roll data for this weapon")),
                     };
                 });
             });
@@ -847,7 +849,7 @@ fn compact_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven, image: Option
     let y = rect.bottom() - 8.0;
     let font = FontId::new(10.5, theme::body_strong());
     let p = ui.painter();
-    let mr = p.text(pos2(rect.left(), y), Align2::LEFT_CENTER, format!("MR {}", riven.mastery_req), font.clone(), TEXT_SECONDARY());
+    let mr = p.text(pos2(rect.left(), y), Align2::LEFT_CENTER, trf("MR {}", &[&riven.mastery_req]), font.clone(), TEXT_SECONDARY());
     let mut x = mr.right() + 8.0;
     if let Some(icon) = riven.polarity.as_deref().and_then(assets::polarity_icon) {
         egui::Image::new(icon).tint(TEXT()).paint_at(ui, Rect::from_min_size(pos2(x, y - 6.0), vec2(12.0, 12.0)));
@@ -856,7 +858,7 @@ fn compact_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven, image: Option
     p.text(pos2(x, y), Align2::LEFT_CENTER, format!("⟳ {}", riven.rerolls), font, REROLL);
     let copy = Rect::from_min_size(pos2(rect.right() - 20.0, rect.bottom() - 18.0), vec2(20.0, 20.0));
     copy_tag_button(ui, copy, resp.id.with("copy"), d);
-    resp.on_hover_text("Open riven details").clicked()
+    resp.on_hover_text(tr("Open riven details")).clicked()
 }
 
 /// Challenge-veiled rivens (in `Upgrades`, unlock challenge attached).
@@ -881,18 +883,18 @@ fn unrevealed(inv: &Inventory) -> Vec<(&'static str, u64)> {
 /// (original: RivensView's veiled section and `groupVeiledRivens`).
 fn veiled(ui: &mut Ui, inv: Option<&Inventory>) {
     let Some(inv) = inv else {
-        kit::empty(ui, "No inventory", "Load an inventory to see your rivens.");
+        kit::empty(ui, tr("No inventory"), tr("Load an inventory to see your rivens."));
         return;
     };
     let challenged = veiled_challenges(inv);
     let unseen = unrevealed(inv);
     if challenged.is_empty() && unseen.is_empty() {
-        kit::empty(ui, "No veiled rivens", "Veiled rivens in your inventory appear here.");
+        kit::empty(ui, tr("No veiled rivens"), tr("Veiled rivens in your inventory appear here."));
         return;
     }
     let mut groups: Vec<(String, Vec<&OwnedRiven>)> = Vec::new();
     for r in &challenged {
-        let label = r.challenge.as_ref().map(|c| c.group.clone()).unwrap_or_else(|| "Challenge not assigned".into());
+        let label = r.challenge.as_ref().map(|c| c.group.clone()).unwrap_or_else(|| tr("Challenge not assigned").into());
         match groups.iter_mut().find(|(l, _)| *l == label) {
             Some((_, list)) => list.push(r),
             None => groups.push((label, vec![r])),
@@ -912,7 +914,7 @@ fn veiled(ui: &mut Ui, inv: Option<&Inventory>) {
                     ui.horizontal(|ui| {
                         kit::icon(ui, assets::RIVEN, 28.0);
                         ui.vertical(|ui| {
-                            ui.label(RichText::new(format!("{} Riven Mod", r.riven_type)).family(theme::body_strong()));
+                            ui.label(RichText::new(trf("{} Riven Mod", &[&r.riven_type])).family(theme::body_strong()));
                             match &r.challenge {
                                 Some(c) => {
                                     ui.label(RichText::new(&c.description).size(12.5).color(TEXT_SECONDARY()));
@@ -927,7 +929,7 @@ fn veiled(ui: &mut Ui, inv: Option<&Inventory>) {
                                     }
                                 }
                                 None => {
-                                    ui.label(RichText::new("Challenge not assigned yet").size(12.5).color(TEXT_MUTED()));
+                                    ui.label(RichText::new(tr("Challenge not assigned yet")).size(12.5).color(TEXT_MUTED()));
                                 }
                             }
                         });
@@ -938,7 +940,7 @@ fn veiled(ui: &mut Ui, inv: Option<&Inventory>) {
             ui.add_space(10.0);
         }
         if !unseen.is_empty() {
-            kit::caption(ui, "Unrevealed");
+            kit::caption(ui, tr("Unrevealed"));
             ui.add_space(4.0);
             ui.with_layout(Layout::left_to_right(Align::Min).with_main_wrap(true), |ui| {
                 for (label, count) in &unseen {
@@ -947,8 +949,8 @@ fn veiled(ui: &mut Ui, inv: Option<&Inventory>) {
                         ui.horizontal(|ui| {
                             kit::icon(ui, assets::RIVEN, 28.0);
                             ui.vertical(|ui| {
-                                ui.label(RichText::new(format!("{label} Riven Mod")).family(theme::body_strong()));
-                                ui.label(RichText::new("Equip to reveal its challenge").size(11.5).color(TEXT_MUTED()));
+                                ui.label(RichText::new(trf("{} Riven Mod", &[&label])).family(theme::body_strong()));
+                                ui.label(RichText::new(tr("Equip to reveal its challenge")).size(11.5).color(TEXT_MUTED()));
                             });
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 ui.label(RichText::new(format!("x{count}")).color(POSITIVE()).family(theme::body_strong()));

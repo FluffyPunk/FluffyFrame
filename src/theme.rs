@@ -237,19 +237,26 @@ fn fonts() -> FontDefinitions {
     add(&mut fonts, "rajdhani-400", include_bytes!("../assets/fonts/rajdhani-latin-400-normal.ttf"));
     add(&mut fonts, "rajdhani-500", include_bytes!("../assets/fonts/rajdhani-latin-500-normal.ttf"));
     add(&mut fonts, "rajdhani-600", include_bytes!("../assets/fonts/rajdhani-latin-600-normal.ttf"));
+    // Cyrillic, which Barlow and Rajdhani lack (Ukrainian UI): Golos Text behind
+    // Barlow, Exo 2 behind Rajdhani, cut down to the Cyrillic block.
+    add(&mut fonts, "golos-400", include_bytes!("../assets/fonts/golos-cyrillic-400.ttf"));
+    add(&mut fonts, "golos-600", include_bytes!("../assets/fonts/golos-cyrillic-600.ttf"));
+    add(&mut fonts, "exo2-400", include_bytes!("../assets/fonts/exo2-cyrillic-400.ttf"));
+    add(&mut fonts, "exo2-500", include_bytes!("../assets/fonts/exo2-cyrillic-500.ttf"));
+    add(&mut fonts, "exo2-600", include_bytes!("../assets/fonts/exo2-cyrillic-600.ttf"));
 
     // Keep egui's defaults behind ours for symbols and emoji.
     let fallbacks = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    let with_fallbacks = |first: &str| {
-        let mut v = vec![first.to_string()];
+    let with_fallbacks = |first: &str, cyrillic: &str| {
+        let mut v = vec![first.to_string(), cyrillic.to_string()];
         v.extend(fallbacks.iter().cloned());
         v
     };
-    fonts.families.insert(FontFamily::Proportional, with_fallbacks("barlow-400"));
-    fonts.families.insert(body_strong(), with_fallbacks("barlow-600"));
-    fonts.families.insert(display_light(), with_fallbacks("rajdhani-400"));
-    fonts.families.insert(display(), with_fallbacks("rajdhani-500"));
-    fonts.families.insert(display_bold(), with_fallbacks("rajdhani-600"));
+    fonts.families.insert(FontFamily::Proportional, with_fallbacks("barlow-400", "golos-400"));
+    fonts.families.insert(body_strong(), with_fallbacks("barlow-600", "golos-600"));
+    fonts.families.insert(display_light(), with_fallbacks("rajdhani-400", "exo2-400"));
+    fonts.families.insert(display(), with_fallbacks("rajdhani-500", "exo2-500"));
+    fonts.families.insert(display_bold(), with_fallbacks("rajdhani-600", "exo2-600"));
     fonts
 }
 

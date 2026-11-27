@@ -10,6 +10,7 @@ use crate::components::{format, ui as kit};
 use crate::ipc::Backend;
 use crate::stores::{self, AppState};
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf, trn};
 
 pub struct ArbiView {
     days: i64,
@@ -46,15 +47,15 @@ impl ArbiView {
             .show(ui, |ui| {
                 let mut nodes: BTreeMap<String, String> = BTreeMap::new();
                 for s in &arbi.slots {
-                    nodes.entry(db.node_label(&s.node_id)).or_insert_with(|| s.node_id.clone());
+                    nodes.entry(format::node(&db.node_label(&s.node_id))).or_insert_with(|| s.node_id.clone());
                 }
                 ui.horizontal(|ui| {
-                    kit::caption(ui, "Nodes");
+                    kit::caption(ui, tr("Nodes"));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(nodes.len().to_string()).size(11.5).color(TEXT_MUTED()));
                     });
                 });
-                kit::search(ui, &mut self.node_search, "Search nodes...", ui.available_width());
+                kit::search(ui, &mut self.node_search, tr("Search nodes..."), ui.available_width());
                 let q = self.node_search.trim().to_lowercase();
                 egui::ScrollArea::vertical().max_height(ui.available_height() - 40.0).show(ui, |ui| {
                     for (label, id) in nodes.iter().filter(|(l, _)| q.is_empty() || l.to_lowercase().contains(&q)) {
@@ -72,7 +73,7 @@ impl ArbiView {
                                 ui.vertical(|ui| {
                                     ui.spacing_mut().item_spacing.y = 0.0;
                                     ui.label(label);
-                                    ui.label(RichText::new(r.map(|r| r.mission_type.as_str()).unwrap_or("")).size(11.5).color(TEXT_MUTED()));
+                                    ui.label(RichText::new(crate::i18n::tr_any(r.map(|r| r.mission_type.as_str()).unwrap_or(""))).size(11.5).color(TEXT_MUTED()));
                                 });
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     let faction = r.map(|r| r.faction.as_str()).unwrap_or("");
@@ -83,10 +84,10 @@ impl ArbiView {
                     }
                 });
                 ui.columns(2, |c| {
-                    if c[0].add_sized([c[0].available_width(), 26.0], egui::Button::new("All")).clicked() {
+                    if c[0].add_sized([c[0].available_width(), 26.0], egui::Button::new(tr("All"))).clicked() {
                         favorites = nodes.values().cloned().collect();
                     }
-                    if c[1].add_sized([c[1].available_width(), 26.0], egui::Button::new("None")).clicked() {
+                    if c[1].add_sized([c[1].available_width(), 26.0], egui::Button::new(tr("None"))).clicked() {
                         favorites.clear();
                     }
                 });
@@ -94,18 +95,18 @@ impl ArbiView {
 
         // Right: schedule grouped by day.
         ui.horizontal(|ui| {
-            egui::ComboBox::from_id_salt("arbi-days").width(80.0).selected_text(format!("{} days", self.days)).show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt("arbi-days").width(80.0).selected_text(trn("{} day", "{} days", (self.days) as u64, &[&self.days])).show_ui(ui, |ui| {
                 for d in [1, 3, 7] {
-                    ui.selectable_value(&mut self.days, d, format!("{d} days"));
+                    ui.selectable_value(&mut self.days, d, trn("{} day", "{} days", (d) as u64, &[&d]));
                 }
             });
-            ui.label(RichText::new(format!("Entries: {}", upcoming.len())).size(12.0).color(TEXT_MUTED()));
-            if kit::chip(ui, self.favorites_only, "★ Favorites only").clicked() {
+            ui.label(RichText::new(trf("Entries: {}", &[&upcoming.len()])).size(12.0).color(TEXT_MUTED()));
+            if kit::chip(ui, self.favorites_only, tr("★ Favorites only")).clicked() {
                 self.favorites_only = !self.favorites_only;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let mut notify = settings.notify_arbitrations;
-                if ui.checkbox(&mut notify, "Notify 5 min before favorites").changed() {
+                if ui.checkbox(&mut notify, tr("Notify 5 min before favorites")).changed() {
                     stores::update_settings(backend, |s| s.notify_arbitrations = notify);
                 }
             });
@@ -115,14 +116,14 @@ impl ArbiView {
             ui.set_width(ui.available_width());
             let header = |ui: &mut Ui| {
                 ui.horizontal(|ui| {
-                    for (t, w) in [("Time", 90.0), ("Node", 300.0), ("Mission", 220.0), ("Faction", 140.0)] {
+                    for (t, w) in [(tr("Time"), 90.0), (tr("Node"), 300.0), (tr("Mission"), 220.0), (tr("Faction"), 140.0)] {
                         ui.allocate_ui(egui::vec2(w, 16.0), |ui| {
                             ui.set_width(w);
                             kit::caption(ui, t);
                         });
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        kit::caption(ui, "Starts in");
+                        kit::caption(ui, tr("Starts in"));
                     });
                 });
             };
@@ -156,8 +157,8 @@ impl ArbiView {
                                 });
                             };
                             cell(ui, 90.0, RichText::new(local.format("%I:%M %p").to_string()).size(12.5).color(TEXT_MUTED()));
-                            cell(ui, 300.0, RichText::new(db.node_label(&slot.node_id)).family(theme::body_strong()));
-                            cell(ui, 220.0, RichText::new(r.map(|r| r.mission_type.as_str()).unwrap_or("")).color(TEXT_SECONDARY()));
+                            cell(ui, 300.0, RichText::new(format::node(&db.node_label(&slot.node_id))).family(theme::body_strong()));
+                            cell(ui, 220.0, RichText::new(crate::i18n::tr_any(r.map(|r| r.mission_type.as_str()).unwrap_or(""))).color(TEXT_SECONDARY()));
                             let faction = r.map(|r| r.faction.as_str()).unwrap_or("");
                             ui.allocate_ui(egui::vec2(140.0, 18.0), |ui| {
                                 ui.set_width(140.0);
@@ -167,14 +168,14 @@ impl ArbiView {
                             });
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 let star = if fav { RichText::new("★").color(ACCENT()) } else { RichText::new("☆").color(TEXT_MUTED()) };
-                                if ui.add(egui::Label::new(star).sense(egui::Sense::click())).on_hover_text("Favorite this node").clicked() {
+                                if ui.add(egui::Label::new(star).sense(egui::Sense::click())).on_hover_text(tr("Favorite this node")).clicked() {
                                     favorites.retain(|f| f != &slot.node_id);
                                     if !fav {
                                         favorites.push(slot.node_id.clone());
                                     }
                                 }
                                 if live {
-                                    ui.label(RichText::new("NOW").family(theme::body_strong()).color(POSITIVE()));
+                                    ui.label(RichText::new(tr("NOW")).family(theme::body_strong()).color(POSITIVE()));
                                 } else {
                                     ui.label(format::until(Some(slot.start)));
                                 }

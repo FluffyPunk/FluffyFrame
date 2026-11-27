@@ -12,6 +12,7 @@ use crate::assets;
 use crate::components::{format, ui as kit};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf, trn, tkey};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Tab {
@@ -51,8 +52,8 @@ impl MasteryView {
         let (Some(inv), Some(db)) = (state.inventory.clone(), state.db.clone()) else { return };
         let (rows, summary) = mastery_helper::rows(&inv, &db);
 
-        kit::page_title(ui, "Mastery Helper", None);
-        kit::tabs(ui, &mut self.tab, &[(Tab::Collection, "Collection".into()), (Tab::Roadmap, "MR Roadmap".into())]);
+        kit::page_title(ui, tr("Mastery Helper"), None);
+        kit::tabs(ui, &mut self.tab, &[(Tab::Collection, tr(tr("Collection")).into()), (Tab::Roadmap, tr(tr("MR Roadmap")).into())]);
 
         let in_progress = rows.iter().filter(|r| !r.mastered && r.level > 0).count();
         let missing = rows.iter().filter(|r| !r.mastered && r.level == 0).count();
@@ -67,8 +68,8 @@ impl MasteryView {
         // Rank reached by doing all the easy mastery: level, claim and craft what's available now.
         let easy_xp: u64 = easy.iter().map(|r| remaining_xp(r)).sum();
         let pot = potential(total_xp(&inv, &db, summary.points), easy_xp);
-        let mr_title = format!("MR {} → MR {}", inv.mastery_rank, pot.rank);
-        let mr_sub = format!("{}/{} XP", format::int(pot.into), format::int(pot.span));
+        let mr_title = trf("MR {} → MR {}", &[&inv.mastery_rank, &pot.rank]);
+        let mr_sub = trf("{}/{} XP", &[&format::int(pot.into), &format::int(pot.span)]);
 
         let mut open: Option<String> = None;
         egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
@@ -81,11 +82,11 @@ impl MasteryView {
                     // A grid, as many per row as fit (a wrapping row steps each
                     // stat a little lower), then MR on its own line.
                     let stats = [
-                        (format!("{:.1}%", pct * 100.0), "Complete", INFO()),
-                        (summary.mastered.to_string(), "Mastered", POSITIVE()),
-                        (in_progress.to_string(), "In Progress", WARNING()),
-                        (missing.to_string(), "Missing", NEGATIVE()),
-                        (summary.total.to_string(), "Total", TEXT()),
+                        (format!("{:.1}%", pct * 100.0), tr("Complete"), INFO()),
+                        (summary.mastered.to_string(), tr("Mastered"), POSITIVE()),
+                        (in_progress.to_string(), tr("In Progress"), WARNING()),
+                        (missing.to_string(), tr("Missing"), NEGATIVE()),
+                        (summary.total.to_string(), tr("Total"), TEXT()),
                     ];
                     let per_row = kit::balanced(kit::fit_columns(ui, 200.0, stats.len()), stats.len());
                     for row in stats.chunks(per_row) {
@@ -103,7 +104,7 @@ impl MasteryView {
                 });
             } else {
             ui.horizontal(|ui| {
-                kit::ring(ui, pct, 118.0, INFO(), "Mastered");
+                kit::ring(ui, pct, 118.0, INFO(), tr("Mastered"));
                 ui.add_space(8.0);
                 kit::card(ui, |ui| {
                     // As tall as the ring beside it (118 minus the card's 14px
@@ -132,13 +133,13 @@ impl MasteryView {
                             });
                         };
                         ui.add_space(12.0);
-                        stat(ui, &summary.mastered.to_string(), "Mastered", POSITIVE());
+                        stat(ui, &summary.mastered.to_string(), tr("Mastered"), POSITIVE());
                         ui.separator();
-                        stat(ui, &in_progress.to_string(), "In Progress", WARNING());
+                        stat(ui, &in_progress.to_string(), tr("In Progress"), WARNING());
                         ui.separator();
-                        stat(ui, &missing.to_string(), "Missing", NEGATIVE());
+                        stat(ui, &missing.to_string(), tr("Missing"), NEGATIVE());
                         ui.separator();
-                        stat(ui, &summary.total.to_string(), "Total", TEXT());
+                        stat(ui, &summary.total.to_string(), tr("Total"), TEXT());
                         ui.separator();
                         ui.vertical(|ui| {
                             ui.label(RichText::new(&mr_title).font(FontId::new(40.0, theme::display_bold())));
@@ -155,9 +156,9 @@ impl MasteryView {
             let owned_xp: u64 = easy.iter().filter(|r| r.source == Source::Owned).map(|r| remaining_xp(r)).sum();
             let bp_xp = easy_xp - owned_xp;
             ui.columns(3, |cols| {
-                insight(&mut cols[0], "Easy mastery", &format!("+{} XP", format::int(easy_xp)), POSITIVE(), &format!("{} items owned or buildable now", easy.len()));
-                insight(&mut cols[1], "Level what you own", &format!("+{} XP", format::int(owned_xp)), ACCENT(), "Owned and not yet rank 30");
-                insight(&mut cols[2], "From the Foundry", &format!("+{} XP", format::int(bp_xp)), INFO(), "Ready to claim, or craftable right now");
+                insight(&mut cols[0], tr("Easy mastery"), &trf("+{} XP", &[&format::int(easy_xp)]), POSITIVE(), &trn("{} item owned or buildable now", "{} items owned or buildable now", (easy.len()) as u64, &[&easy.len()]));
+                insight(&mut cols[1], tr("Level what you own"), &trf("+{} XP", &[&format::int(owned_xp)]), ACCENT(), tr("Owned and not yet rank 30"));
+                insight(&mut cols[2], tr("From the Foundry"), &trf("+{} XP", &[&format::int(bp_xp)]), INFO(), tr("Ready to claim, or craftable right now"));
             });
             ui.add_space(10.0);
 
@@ -167,7 +168,7 @@ impl MasteryView {
                         [Source::Owned, Source::ReadyToClaim, Source::CraftIt, Source::CraftParts, Source::Market, Source::ClanLab];
                     let tabs: Vec<(Source, String)> = ROUTES
                         .iter()
-                        .map(|&s| (s, format!("{} ({})", s.label(), roadmap.iter().filter(|r| r.source == s).count())))
+                        .map(|&s| (s, format!("{} ({})", tr(s.label()), roadmap.iter().filter(|r| r.source == s).count())))
                         .collect();
                     kit::tabs(ui, &mut self.route, &tabs);
                     let shown: Vec<&&MasteryRow> = roadmap.iter().filter(|r| r.source == self.route).collect();
@@ -192,7 +193,7 @@ impl MasteryView {
                         ui.add_space(4.0);
                     }
                     if shown.is_empty() {
-                        kit::empty(ui, "Nothing here", "No unmastered items on this route.");
+                        kit::empty(ui, tr("Nothing here"), tr("No unmastered items on this route."));
                     }
                 }
                 Tab::Collection => self.collection(ui, &rows, &mastery_helper::chart_progress(&inv, &db), &db, &mut open),
@@ -211,7 +212,7 @@ impl MasteryView {
         db: &fluffyframe_core::services::item_database::ItemDb,
         open: &mut Option<String>,
     ) {
-        egui::CollapsingHeader::new(RichText::new("Detailed breakdown").font(FontId::new(15.0, theme::display_bold())))
+        egui::CollapsingHeader::new(RichText::new(tr("Detailed breakdown")).font(FontId::new(15.0, theme::display_bold())))
             .default_open(true)
             .show(ui, |ui| {
                 kit::card(ui, |ui| {
@@ -224,7 +225,7 @@ impl MasteryView {
                         }
                         let done = in_group.iter().filter(|r| r.mastered).count() as u64;
                         let started = in_group.iter().filter(|r| r.mastered || r.level > 0).count() as u64;
-                        breakdown_row(ui, label, Progress { done, total: in_group.len() as u64 }, started, POSITIVE());
+                        breakdown_row(ui, tr(label), Progress { done, total: in_group.len() as u64 }, started, POSITIVE());
                     }
                 });
                 ui.add_space(8.0);
@@ -234,14 +235,14 @@ impl MasteryView {
                         ui.set_width(ui.available_width());
                         let (title, rows, color) = if col == 0 {
                             let rows = [
-                                ("Normal", chart.nodes),
-                                ("Junctions", chart.junctions),
-                                ("Steel Path", chart.steel_path),
-                                ("Steel P. Junctions", chart.steel_junctions),
+                                (tr("Normal"), chart.nodes),
+                                (tr("Junctions"), chart.junctions),
+                                (tr("Steel Path"), chart.steel_path),
+                                (tr("Steel P. Junctions"), chart.steel_junctions),
                             ];
-                            ("Star chart", rows.to_vec(), INFO())
+                            (tr("Star chart"), rows.to_vec(), INFO())
                         } else {
-                            ("Intrinsics", vec![("Railjack", chart.railjack), ("Drifter", chart.drifter)], ACCENT())
+                            (tr("Intrinsics"), vec![(tr("Railjack"), chart.railjack), (tr("Drifter"), chart.drifter)], ACCENT())
                         };
                         ui.label(RichText::new(title).font(FontId::new(15.0, theme::display_bold())));
                         ui.add_space(2.0);
@@ -254,20 +255,20 @@ impl MasteryView {
             });
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            kit::search(ui, &mut self.search, "Search...", 240.0);
+            kit::search(ui, &mut self.search, tr("Search..."), 240.0);
         });
         ui.add_space(4.0);
         let mut cat: Option<&str> = self.group;
         let tabs: Vec<(Option<&str>, String)> =
-            std::iter::once((None, "All".to_string())).chain(GROUPS.iter().map(|(l, _)| (Some(*l), l.to_string()))).collect();
+            std::iter::once((None, tr("All").to_string())).chain(GROUPS.iter().map(|(l, _)| (Some(*l), tr(l).to_string()))).collect();
         if kit::tabs(ui, &mut cat, &tabs) {
             self.group = cat;
         }
         let status_tabs = [
-            (Status::All, "All".to_string()),
-            (Status::Missing, "Missing".to_string()),
-            (Status::InProgress, "In Progress".to_string()),
-            (Status::Mastered, "Mastered".to_string()),
+            (Status::All, tr("All").to_string()),
+            (Status::Missing, tr("Missing").to_string()),
+            (Status::InProgress, tr("In Progress").to_string()),
+            (Status::Mastered, tr("Mastered").to_string()),
         ];
         kit::tabs(ui, &mut self.status, &status_tabs);
         let q = self.search.trim().to_lowercase();
@@ -309,7 +310,7 @@ impl MasteryView {
                             }
                             egui::Frame::new().inner_margin(Margin::symmetric(10, 6)).show(ui, |ui| {
                                 ui.add(egui::Label::new(RichText::new(&r.name).family(theme::body_strong())).truncate());
-                                ui.label(RichText::new(r.kind.label()).size(11.5).color(TEXT_MUTED()));
+                                ui.label(RichText::new(tr(r.kind.label())).size(11.5).color(TEXT_MUTED()));
                                 let color = if r.mastered { POSITIVE() } else if r.level > 0 { WARNING() } else { TEXT_MUTED() };
                                 kit::progress(ui, r.level as f32 / r.max_level.max(1) as f32, color, 3.0);
                                 ui.label(RichText::new(format!("{}/{}", r.level, r.max_level)).size(11.0).color(TEXT_MUTED()));
@@ -327,15 +328,15 @@ impl MasteryView {
 }
 
 const GROUPS: [(&str, &[ItemKind]); 9] = [
-    ("Warframes", &[ItemKind::Warframe]),
-    ("Primary", &[ItemKind::Primary]),
-    ("Secondary", &[ItemKind::Secondary]),
-    ("Melee", &[ItemKind::Melee]),
-    ("Companions", &[ItemKind::Companion, ItemKind::CompanionWeapon]),
-    ("Archwing", &[ItemKind::Archwing, ItemKind::ArchGun, ItemKind::ArchMelee]),
-    ("Amps", &[ItemKind::Amp]),
-    ("Necramech", &[ItemKind::Necramech]),
-    ("Misc", &[ItemKind::KDrive]),
+    (tkey("Warframes"), &[ItemKind::Warframe]),
+    (tkey("Primary"), &[ItemKind::Primary]),
+    (tkey("Secondary"), &[ItemKind::Secondary]),
+    (tkey("Melee"), &[ItemKind::Melee]),
+    (tkey("Companions"), &[ItemKind::Companion, ItemKind::CompanionWeapon]),
+    (tkey("Archwing"), &[ItemKind::Archwing, ItemKind::ArchGun, ItemKind::ArchMelee]),
+    (tkey("Amps"), &[ItemKind::Amp]),
+    (tkey("Necramech"), &[ItemKind::Necramech]),
+    (tkey("Misc"), &[ItemKind::KDrive]),
 ];
 
 /// Vertical gap between breakdown rows.
@@ -392,18 +393,18 @@ fn recommendation(ui: &mut Ui, r: &MasteryRow, image: Option<&str>) -> egui::Res
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(&r.name).family(theme::body_strong()).size(15.0));
                         if r.mastery_req > 0 {
-                            kit::pill(ui, &format!("MR {}", r.mastery_req), TEXT_SECONDARY());
+                            kit::pill(ui, &trf("MR {}", &[&r.mastery_req]), TEXT_SECONDARY());
                         }
                     });
-                    ui.label(RichText::new(format!("{} · {}", r.kind.label(), r.source.label())).size(12.0).color(TEXT_SECONDARY()));
+                    ui.label(RichText::new(format!("{} · {}", tr(r.kind.label()), tr(r.source.label()))).size(12.0).color(TEXT_SECONDARY()));
                     let progress = match (r.source, r.parts) {
-                        (Source::Owned | Source::ReadyToClaim, _) | (_, None) => format!("Level {}/{}", r.level, r.max_level),
-                        (_, Some((have, total))) => format!("Parts {have}/{total}"),
+                        (Source::Owned | Source::ReadyToClaim, _) | (_, None) => trf("Level {}/{}", &[&r.level, &r.max_level]),
+                        (_, Some((have, total))) => trf("Parts {}/{}", &[&have, &total]),
                     };
                     ui.label(RichText::new(progress).size(12.0).color(TEXT_MUTED()));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(RichText::new(format!("+{} XP", format::int(remaining_xp(r)))).family(theme::body_strong()).color(ACCENT()));
+                    ui.label(RichText::new(trf("+{} XP", &[&(format::int(remaining_xp(r)))])).family(theme::body_strong()).color(ACCENT()));
                 });
             });
         })

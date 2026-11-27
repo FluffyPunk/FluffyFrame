@@ -176,11 +176,11 @@ impl AppState {
                 LogEvent::Attached(p) => self.ee_log = p,
                 LogEvent::LoginComplete => self.logged_in = true,
                 LogEvent::GameStarted => self.logged_in = false,
-                LogEvent::Whisper(from) => self.push_history(format!("Whisper from {from}")),
+                LogEvent::Whisper(from) => self.push_history(crate::i18n::trf("Whisper from {}", &[&from])),
                 LogEvent::MissionEnded | LogEvent::TradeCompleted(_) | LogEvent::InventorySynced | LogEvent::PurchaseCompleted => {}
             },
             Event::Trade(t) => {
-                self.push_history(format!("Trade with {}: {}p", t.trade.partner, t.trade.platinum));
+                self.push_history(crate::i18n::trf("Trade with {}: {}p", &[&t.trade.partner, &t.trade.platinum]));
                 self.trades.events.push(t);
             }
             Event::Toast(kind, text) => self.toast(kind, text),

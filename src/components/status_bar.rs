@@ -9,6 +9,7 @@ use crate::assets;
 use crate::ipc::{Backend, InventoryCmd};
 use crate::stores::{self, AppState};
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf, trn};
 
 /// Custom title bar (the window is frameless, like the original): drag to move,
 /// double-click to maximize, logo and name centered, window buttons on the right.
@@ -155,57 +156,53 @@ pub fn show(ui: &mut Ui, state: &AppState, backend: &Backend) {
             (_, Some(l)) => (WARNING(), l.clone()),
             (Some(_), None) => {
                 let t = state.world.as_ref().and_then(|w| w.fetched_at).map(clock).unwrap_or_default();
-                (POSITIVE(), format!("WF data {t}").trim_end().to_string())
+                (POSITIVE(), trf("WF data {}", &[&t]).trim_end().to_string())
             }
-            (None, None) => (NEGATIVE(), "WF data unavailable".into()),
+            (None, None) => (NEGATIVE(), tr("WF data unavailable").into()),
         };
-        status(ui, dot, text).on_hover_text("Game data and world state");
+        status(ui, dot, text).on_hover_text(tr("Game data and world state"));
         match &state.inventory {
             Some(inv) => {
-                let updated = inv.fetched_at.map(|t| format!(" · updated {}", clock(t))).unwrap_or_default();
-                ui.label(small(format!(
-                    "{} items loaded · {}{updated}",
-                    format::int(state.rows.len() as u64),
-                    inv.source.unwrap_or(settings.inventory_source).label()
-                )));
+                let updated = inv.fetched_at.map(|t| format!(" · {}", trf("updated {}", &[&clock(t)]))).unwrap_or_default();
+                ui.label(small(trn("{} item loaded · {}{}", "{} items loaded · {}{}", state.rows.len() as u64, &[&(format::int(state.rows.len() as u64)), &tr(inv.source.unwrap_or(settings.inventory_source).label()), &updated])));
             }
             None => {
-                ui.label(small("No inventory loaded".into()));
+                ui.label(small(tr("No inventory loaded").into()));
             }
         }
         if settings.inventory_source == InventorySource::Game {
             if state.helper.running {
                 ui.add(egui::Spinner::new().size(11.0));
-                ui.label(small("Reading game…".into()));
+                ui.label(small(tr("Reading game…").into()));
             } else {
                 if let Some(f) = state.helper.last_failure {
                     ui.label(RichText::new("⚠").color(WARNING())).on_hover_text(f.hint());
                 }
-                if ui.add(egui::Label::new(small("⟳ Refresh".into())).sense(egui::Sense::click())).on_hover_text("Read inventory from the game now").clicked() {
+                if ui.add(egui::Label::new(small(tr("⟳ Refresh").into())).sense(egui::Sense::click())).on_hover_text(tr("Read inventory from the game now")).clicked() {
                     backend.inventory(InventoryCmd::RefreshNow);
                 }
             }
         }
         let (dot, text) = match (&state.ee_log, state.logged_in) {
-            (Some(_), true) => (POSITIVE(), "In game"),
-            (Some(_), false) => (WARNING(), "EE.log found"),
-            (None, _) => (NEGATIVE(), "EE.log not found"),
+            (Some(_), true) => (POSITIVE(), tr("In game")),
+            (Some(_), false) => (WARNING(), tr("EE.log found")),
+            (None, _) => (NEGATIVE(), tr("EE.log not found")),
         };
         status(ui, dot, text.into()).on_hover_text(
-            state.ee_log.as_ref().map(|p| p.display().to_string()).unwrap_or("Set the EE.log path in Settings".into()),
+            state.ee_log.as_ref().map(|p| p.display().to_string()).unwrap_or(tr("Set the EE.log path in Settings").into()),
         );
         if state.price_queue > 0 {
             ui.add(egui::Spinner::new().size(11.0));
-            ui.label(small(format!("Pricing {} items", state.price_queue)));
+            ui.label(small(trn("Pricing {} item", "Pricing {} items", (state.price_queue) as u64, &[&state.price_queue])));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).size(11.0).color(Color32::from_gray(90)));
             if let Some(s) = &state.session {
                 // Right to left: the name, then its status dot before it.
-                let name = ui.label(small(format!("WFM: {}", s.ingame_name.as_deref().unwrap_or("signed in"))));
+                let name = ui.label(small(trf("WFM: {}", &[&s.ingame_name.as_deref().unwrap_or(tr("signed in"))])));
                 ui.add_space(-6.0);
                 let dot = ui.label(RichText::new("●").size(9.0).color(wfm_status_color(state.wfm_status)));
-                let tip = state.wfm_status.map_or("Status unknown", |s| s.label());
+                let tip = state.wfm_status.map_or(tr("Status unknown"), |s| tr(s.label()));
                 name.on_hover_text(tip);
                 dot.on_hover_text(tip);
             }

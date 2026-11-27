@@ -35,11 +35,20 @@ pub struct CycleWatch {
     last: Option<DateTime<Utc>>,
 }
 
+/// A planet-cycle alert; the app words it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CycleAlert {
+    /// `cycle` changed to `state`.
+    Began { cycle: &'static str, state: &'static str },
+    /// `cycle` changes to `next` in `minutes`.
+    Ahead { cycle: &'static str, next: &'static str, minutes: i64 },
+}
+
 impl CycleWatch {
-    /// (title, body) for each `enabled` cycle that changed since the last check,
-    /// or changes within `lead`. The first check only records states, so there
-    /// is no burst of alerts at startup.
-    pub fn check(&mut self, cycles: &[Cycle], enabled: &[String], lead: Duration, now: DateTime<Utc>) -> Vec<(String, String)> {
+    /// Alerts for each `enabled` cycle that changed since the last check, or
+    /// changes within `lead`. The first check only records states, so there is
+    /// no burst of alerts at startup.
+    pub fn check(&mut self, cycles: &[Cycle], enabled: &[String], lead: Duration, now: DateTime<Utc>) -> Vec<CycleAlert> {
         let primed = !self.states.is_empty();
         let mut out = Vec::new();
         for c in cycles {
@@ -47,9 +56,8 @@ impl CycleWatch {
             if !enabled.iter().any(|e| e == c.name) {
                 continue;
             }
-            let title = format!("{} cycle", c.name);
             if primed && previous.is_some_and(|p| p != c.state) {
-                out.push((title.clone(), format!("{} has begun.", c.state)));
+                out.push(CycleAlert::Began { cycle: c.name, state: c.state });
             }
             let left = c.ends_at - now;
             // The first warning comes as soon as the change is within `lead`.
@@ -61,7 +69,7 @@ impl CycleWatch {
             if lead > Duration::zero() && left <= lead && (first || crossed) {
                 self.warned.insert((c.name, c.ends_at));
                 let minutes = (left.num_seconds() + 59) / 60;
-                out.push((title, format!("{} begins in {minutes} min.", c.next)));
+                out.push(CycleAlert::Ahead { cycle: c.name, next: c.next, minutes });
             }
         }
         self.warned.retain(|(_, end)| *end > now);
@@ -90,7 +98,7 @@ mod tests {
         assert!(w.check(&[earth("Day", "Night", end)], &on, lead, t).is_empty());
         assert!(w.check(&[earth("Day", "Night", end)], &on, lead, t + Duration::minutes(6)).is_empty());
         let ahead = w.check(&[earth("Day", "Night", end)], &on, lead, t + Duration::minutes(8));
-        assert_eq!(ahead, vec![("Earth cycle".into(), "Night begins in 2 min.".into())]);
+        assert_eq!(ahead, vec![CycleAlert::Ahead { cycle: "Earth", next: "Night", minutes: 2 }]);
         // Warned once…
         let at = |s: i64| t + Duration::seconds(s);
         assert!(w.check(&[earth("Day", "Night", end)], &on, lead, at(490)).is_empty());
@@ -102,7 +110,7 @@ mod tests {
         let short = Duration::minutes(1);
         assert!(w.check(&[earth("Day", "Night", end)], &on, short, at(535)).is_empty());
         let again = w.check(&[earth("Day", "Night", end)], &on, short, at(545));
-        assert_eq!(again, vec![("Earth cycle".into(), "Night begins in 1 min.".into())]);
+        assert_eq!(again, vec![CycleAlert::Ahead { cycle: "Earth", next: "Night", minutes: 1 }]);
         assert!(w.check(&[earth("Day", "Night", end)], &on, short, at(555)).is_empty());
         // A bell turned on inside the window still warns right away.
         let mut late = CycleWatch::default();
@@ -110,7 +118,7 @@ mod tests {
         assert_eq!(late.check(&[earth("Day", "Night", end)], &on, lead, at(510)).len(), 1);
         let next_end = end + Duration::hours(4);
         let changed = w.check(&[earth("Night", "Day", next_end)], &on, lead, end);
-        assert_eq!(changed, vec![("Earth cycle".into(), "Night has begun.".into())]);
+        assert_eq!(changed, vec![CycleAlert::Began { cycle: "Earth", state: "Night" }]);
         // Disabled cycles stay quiet but are still tracked.
         assert!(w.check(&[earth("Day", "Night", next_end + Duration::hours(4))], &[], lead, next_end).is_empty());
     }

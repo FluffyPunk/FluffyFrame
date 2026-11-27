@@ -6,6 +6,7 @@ use fluffyframe_core::services::inventory::{ArchonShard, ShardColor};
 use crate::components::ui as kit;
 use crate::stores::AppState;
 use crate::theme::*;
+use crate::i18n::{tr, trf};
 
 /// Shard hues: fixed game colours, outside the theme presets.
 fn shard_hex(color: ShardColor) -> Color32 {
@@ -21,7 +22,7 @@ fn shard_hex(color: ShardColor) -> Color32 {
 
 /// "Crimson · Tauforged", "Amber", "Unknown".
 pub fn shard_name(shard: &ArchonShard) -> String {
-    let hue = shard.color.map(ShardColor::label).unwrap_or("Unknown");
+    let hue = shard.color.map(|c| tr(c.label())).unwrap_or(tr("Unknown"));
     if shard.tauforged { format!("{hue} · Tauforged") } else { hue.to_string() }
 }
 
@@ -57,5 +58,5 @@ pub fn shard_pips(ui: &Ui, state: &AppState, shards: &[ArchonShard], bottom_left
     let tip = shards.iter().map(shard_name).collect::<Vec<_>>().join(", ");
     let area = Rect::from_min_size(bottom_left + vec2(0.0, -SIZE), vec2(shards.len() as f32 * (SIZE + GAP), SIZE));
     ui.interact(area, ui.scope_id().with("shards"), Sense::hover())
-        .on_hover_text(format!("{} archon shards: {tip}", shards.len()));
+        .on_hover_text(trf("{} archon shards: {}", &[&shards.len(), &tip]));
 }

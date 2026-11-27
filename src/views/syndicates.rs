@@ -8,6 +8,7 @@ use super::need_inventory;
 use crate::components::{format, ui as kit, widgets};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf};
 
 const ALIGNED: &[&str] = &[
     "ArbitersSyndicate",
@@ -55,7 +56,7 @@ fn progress(title: i64, standing: i64, top: i64) -> (f32, String) {
         let span = RANK_SPAN[(title as usize).min(5)];
         let frac = (standing - start) as f32 / span as f32;
         if title >= top {
-            (frac, "Highest rank reached".into())
+            (frac, tr("Highest rank reached").into())
         } else {
             let need = (rank_start(title + 1) - standing).max(0) as u64;
             (frac, format!("{} standing to rank {}", format::compact(need), title + 1))
@@ -148,25 +149,25 @@ fn standing_text(standing: i64) -> String {
 
 /// `daily_left`: the syndicate's own daily standing cap, if it has one.
 fn syndicate_card(ui: &mut Ui, a: &Affiliation, emblem_src: Option<egui::ImageSource<'static>>, daily_left: Option<i64>) {
-    let name = game_tables::syndicate_label(&a.tag);
+    let name = crate::i18n::tr_any(&game_tables::syndicate_label(&a.tag)).to_string();
     let top = max_rank(&a.tag);
     let simaris = is_simaris(&a.tag);
     let (frac, note, window) = if simaris {
         let left = (SIMARIS_CAP - a.standing).max(0) as u64;
-        let note = if left == 0 { "Standing cap reached".to_string() } else { format!("{} standing to the cap", format::compact(left)) };
+        let note = if left == 0 { tr("Standing cap reached").to_string() } else { trf("{} standing to the cap", &[&format::compact(left)]) };
         (a.standing as f32 / SIMARIS_CAP as f32, note, Some((a.standing, SIMARIS_CAP)))
     } else {
         let (frac, note) = progress(a.title, a.standing, top);
         (frac, note, rank_window(a.title, a.standing))
     };
     let (rank_color, rank) = if simaris {
-        (TEXT_MUTED(), "No ranks".to_string())
+        (TEXT_MUTED(), tr("No ranks").to_string())
     } else if a.title >= top {
-        (POSITIVE(), format!("Rank {} · Max", a.title))
+        (POSITIVE(), trf("Rank {} · Max", &[&a.title]))
     } else if a.title < 0 {
-        (NEGATIVE(), format!("Rank {}", a.title))
+        (NEGATIVE(), trf("Rank {}", &[&a.title]))
     } else {
-        (ACCENT(), format!("Rank {}", a.title))
+        (ACCENT(), trf("Rank {}", &[&a.title]))
     };
     kit::card(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -186,12 +187,12 @@ fn syndicate_card(ui: &mut Ui, a: &Affiliation, emblem_src: Option<egui::ImageSo
         let value = FontId::new(22.0, theme::display_bold());
         if milestone_ranked(&a.tag) {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("Rank {}", a.title)).font(value));
+                ui.label(RichText::new(trf("Rank {}", &[&a.title])).font(value));
                 ui.label(RichText::new(format!("/ {top}")).font(FontId::new(15.0, theme::display_bold())).color(TEXT_SECONDARY()));
             });
             // Where the bar would be, so cards in a row keep one height.
             ui.add_space(8.0);
-            ui.label(RichText::new("Ranks up at milestones, not with standing").size(12.0).color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("Ranks up at milestones, not with standing")).size(12.0).color(TEXT_MUTED()));
             return;
         }
         let standing = |ui: &mut Ui| {
@@ -204,11 +205,11 @@ fn syndicate_card(ui: &mut Ui, a: &Affiliation, emblem_src: Option<egui::ImageSo
                     ui.label(RichText::new(standing_text(a.standing)).font(value).color(NEGATIVE()));
                 }
             }
-            ui.label(RichText::new("standing").size(12.0).color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("standing")).size(12.0).color(TEXT_MUTED()));
         };
         match daily_left {
             Some(d) => kit::split_row(ui, standing, |ui| {
-                ui.label(RichText::new("left today").size(12.0).color(TEXT_MUTED()));
+                ui.label(RichText::new(tr("left today")).size(12.0).color(TEXT_MUTED()));
                 ui.label(RichText::new(format::int(d.max(0) as u64)).family(theme::body_strong()).color(ACCENT_BRIGHT()));
             }),
             None => {
@@ -228,8 +229,8 @@ impl SyndicatesView {
         }
         let Some(inv) = state.inventory.clone() else { return };
         ui.horizontal(|ui| {
-            kit::page_title(ui, "Syndicates", None);
-            kit::page_subtitle(ui, "Standing and rank for every syndicate on your account.");
+            kit::page_title(ui, tr("Syndicates"), None);
+            kit::page_subtitle(ui, tr("Standing and rank for every syndicate on your account."));
         });
         let mut aligned: Vec<_> = inv.affiliations.iter().filter(|a| ALIGNED.contains(&a.tag.as_str())).collect();
         let mut open: Vec<_> = inv.affiliations.iter().filter(|a| OPEN_WORLDS.contains(&a.tag.as_str())).collect();
@@ -242,13 +243,13 @@ impl SyndicatesView {
             list.sort_by_key(|a| game_tables::syndicate_label(&a.tag));
         }
         open.sort_by_key(|a| OPEN_WORLDS.iter().position(|t| *t == a.tag));
-        let tabs: Vec<(Tab, String)> = [(Tab::Aligned, "Aligned", &aligned), (Tab::OpenWorlds, "Open worlds", &open), (Tab::Other, "Other", &other)]
+        let tabs: Vec<(Tab, String)> = [(Tab::Aligned, tr("Aligned"), &aligned), (Tab::OpenWorlds, tr("Open worlds"), &open), (Tab::Other, tr("Other"), &other)]
             .into_iter()
             .filter(|(_, _, list)| !list.is_empty())
             .map(|(tab, label, list)| (tab, format!("{label} ({})", list.len())))
             .collect();
         let Some(first) = tabs.first().map(|(t, _)| *t) else {
-            kit::empty(ui, "No syndicates", "The inventory lists no syndicate standing.");
+            kit::empty(ui, tr("No syndicates"), tr("The inventory lists no syndicate standing."));
             return;
         };
         if !tabs.iter().any(|(t, _)| *t == self.tab) {
@@ -269,7 +270,7 @@ impl SyndicatesView {
             {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format::int(d.max(0) as u64)).font(FontId::new(17.0, theme::display_bold())).color(ACCENT_BRIGHT()));
-                    ui.label(RichText::new("standing left today, shared by all aligned syndicates").size(12.0).color(TEXT_MUTED()));
+                    ui.label(RichText::new(tr("standing left today, shared by all aligned syndicates")).size(12.0).color(TEXT_MUTED()));
                 });
                 ui.add_space(6.0);
             }

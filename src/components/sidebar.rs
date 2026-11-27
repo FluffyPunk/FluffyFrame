@@ -6,6 +6,7 @@ use crate::assets;
 use crate::components::ui;
 use crate::theme::{self, *};
 use crate::views::ViewName;
+use crate::i18n::tr;
 
 pub const WIDTH: f32 = 250.0;
 pub const COLLAPSED_WIDTH: f32 = 64.0;
@@ -40,7 +41,7 @@ fn nav_item(ui: &mut Ui, selected: bool, collapsed: bool, icon: egui::ImageSourc
 
 pub fn show(ui: &mut Ui, current: &mut ViewName, hidden: &[String], collapsed: &mut bool) {
     ui.add_space(14.0);
-    let label = if *collapsed { "›" } else { "‹   Collapse" };
+    let label = if *collapsed { "›".to_string() } else { format!("‹   {}", tr("Collapse")) };
     let resp = ui.add(egui::Label::new(RichText::new(label).font(FontId::new(15.0, theme::display())).color(TEXT_SECONDARY())).sense(Sense::click()));
     if resp.clicked() {
         *collapsed = !*collapsed;
@@ -57,7 +58,7 @@ pub fn show(ui: &mut Ui, current: &mut ViewName, hidden: &[String], collapsed: &
     }
     ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
         ui.add_space(12.0);
-        let feedback = nav_item(ui, false, *collapsed, assets::TRADE, "Feedback");
+        let feedback = nav_item(ui, false, *collapsed, assets::TRADE, tr("Feedback"));
         if feedback.clicked() {
             ui.ctx().open_url(egui::OpenUrl::new_tab(format!("{}/issues", fluffyframe_core::config::app_meta::REPO_URL)));
         }

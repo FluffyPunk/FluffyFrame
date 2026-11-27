@@ -10,6 +10,7 @@ use crate::components::{format, ui as kit};
 use crate::ipc::{Backend, MarketCmd};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf, trn};
 
 /// One attribute row: a wanted stat (by warframe.market name) and whether a
 /// listing must have it.
@@ -125,10 +126,10 @@ impl FinderView {
     }
 
     fn weapon_column(&mut self, ui: &mut Ui, state: &AppState) {
-        caption(ui, "Weapon");
+        caption(ui, tr("Weapon"));
         let resp = ui.add(
             egui::TextEdit::singleline(&mut self.query)
-                .hint_text("Type weapon name...")
+                .hint_text(tr("Type weapon name..."))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(10, 8)),
         );
@@ -165,7 +166,7 @@ impl FinderView {
                             ui.set_width(resp.rect.width());
                             egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                                 if weapons.is_empty() {
-                                    ui.label(RichText::new("  No riven weapons match").color(TEXT_MUTED()));
+                                    ui.label(RichText::new(tr("  No riven weapons match")).color(TEXT_MUTED()));
                                 }
                                 for w in weapons {
                                     let row = ui.add_sized(
@@ -193,21 +194,21 @@ impl FinderView {
         let data = state.good_rolls.as_ref().zip(state.db.as_ref()).and_then(|(g, db)| g.get(name, &db.rivens));
         let Some(data) = data else {
             ui.add_space(10.0);
-            ui.label(RichText::new("No good-roll data for this weapon.").color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("No good-roll data for this weapon.")).color(TEXT_MUTED()));
             return;
         };
         ui.add_space(10.0);
-        caption(ui, "Best positives");
+        caption(ui, tr("Best positives"));
         ui.horizontal_wrapped(|ui| {
             for tag in data.wanted() {
                 chip(ui, &game_tables::riven_stat_label(tag, *melee), POSITIVE());
             }
         });
         ui.add_space(8.0);
-        caption(ui, "Best negatives");
+        caption(ui, tr("Best negatives"));
         ui.horizontal_wrapped(|ui| {
             if data.accepted_bad.is_empty() {
-                ui.label(RichText::new("none").size(12.0).color(TEXT_MUTED()));
+                ui.label(RichText::new(tr("none")).size(12.0).color(TEXT_MUTED()));
             }
             for tag in &data.accepted_bad {
                 chip(ui, &game_tables::riven_stat_label(tag, *melee), NEGATIVE());
@@ -216,7 +217,7 @@ impl FinderView {
     }
 
     fn filter_column(&mut self, ui: &mut Ui, backend: &Backend) {
-        caption(ui, "Attributes");
+        caption(ui, tr("Attributes"));
         for (i, slot) in self.slots.iter_mut().enumerate() {
             let color = if slot.positive { POSITIVE() } else { NEGATIVE() };
             egui::Frame::new()
@@ -228,7 +229,7 @@ impl FinderView {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(if slot.positive { "+" } else { "−" }).font(FontId::new(15.0, theme::display_bold())).color(color));
-                        let any = if slot.positive { "Any positive" } else { "Any negative" };
+                        let any = if slot.positive { tr("Any positive") } else { tr("Any negative") };
                         let current = slot.stat.map(|s| self.options.iter().find(|(n, _)| *n == s).map(|(_, l)| l.as_str()).unwrap_or(s)).unwrap_or(any);
                         let width = ui.available_width() - 64.0;
                         egui::ComboBox::from_id_salt(("finder-slot", i)).width(width).selected_text(current).height(320.0).show_ui(ui, |ui| {
@@ -237,15 +238,15 @@ impl FinderView {
                                 ui.selectable_value(&mut slot.stat, Some(*name), label);
                             }
                         });
-                        ui.checkbox(&mut slot.required, RichText::new("Req").size(12.0).color(TEXT_MUTED()))
-                            .on_hover_text("Listings must have this stat");
+                        ui.checkbox(&mut slot.required, RichText::new(tr("Req")).size(12.0).color(TEXT_MUTED()))
+                            .on_hover_text(tr("Listings must have this stat"));
                     });
                 });
             ui.add_space(2.0);
         }
 
         ui.add_space(8.0);
-        caption(ui, "Filters");
+        caption(ui, tr("Filters"));
         let row_label = |ui: &mut Ui, text: &str| {
             ui.allocate_ui(vec2(70.0, 20.0), |ui| {
                 ui.set_width(70.0);
@@ -253,25 +254,25 @@ impl FinderView {
             });
         };
         ui.horizontal(|ui| {
-            row_label(ui, "Price");
-            number_box(ui, &mut self.price_min, "Min");
+            row_label(ui, tr("Price"));
+            number_box(ui, &mut self.price_min, tr("Min"));
             ui.label(RichText::new("-").color(TEXT_MUTED()));
-            number_box(ui, &mut self.price_max, "Max");
+            number_box(ui, &mut self.price_max, tr("Max"));
         });
         ui.horizontal(|ui| {
-            row_label(ui, "Rerolls");
-            number_box(ui, &mut self.rerolls_min, "Min");
+            row_label(ui, tr("Rerolls"));
+            number_box(ui, &mut self.rerolls_min, tr("Min"));
             ui.label(RichText::new("-").color(TEXT_MUTED()));
-            number_box(ui, &mut self.rerolls_max, "Max");
+            number_box(ui, &mut self.rerolls_max, tr("Max"));
         });
         ui.horizontal(|ui| {
-            row_label(ui, "Similarity");
-            number_box(ui, &mut self.min_similarity, "Min %");
+            row_label(ui, tr("Similarity"));
+            number_box(ui, &mut self.min_similarity, tr("Min %"));
             ui.label(RichText::new("%").color(TEXT_MUTED()));
         });
-        ui.checkbox(&mut self.require_negative, RichText::new("Require negative stat").size(12.5).color(TEXT_SECONDARY()));
-        ui.checkbox(&mut self.online_only, RichText::new("Online / in-game only").size(12.5).color(TEXT_SECONDARY()));
-        ui.checkbox(&mut self.hide_one_plat, RichText::new("Hide 1p listings").size(12.5).color(TEXT_SECONDARY()));
+        ui.checkbox(&mut self.require_negative, RichText::new(tr("Require negative stat")).size(12.5).color(TEXT_SECONDARY()));
+        ui.checkbox(&mut self.online_only, RichText::new(tr("Online / in-game only")).size(12.5).color(TEXT_SECONDARY()));
+        ui.checkbox(&mut self.hide_one_plat, RichText::new(tr("Hide 1p listings")).size(12.5).color(TEXT_SECONDARY()));
         ui.add_space(8.0);
 
         let enabled = self.selected.is_some();
@@ -320,7 +321,7 @@ impl FinderView {
         let Some(auctions) = state.riven_auctions.get(slug) else {
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
-                ui.label(RichText::new("Searching warframe.market auctions...").color(TEXT_MUTED()));
+                ui.label(RichText::new(tr("Searching warframe.market auctions...")).color(TEXT_MUTED()));
             });
             return;
         };
@@ -328,14 +329,14 @@ impl FinderView {
         if ranked.is_empty() {
             ui.vertical_centered(|ui| {
                 ui.add_space(20.0);
-                let text = if auctions.is_empty() { "No auctions found" } else { "No auctions found matching filters" };
+                let text = if auctions.is_empty() { tr("No auctions found") } else { tr("No auctions found matching filters") };
                 ui.label(RichText::new(text).color(TEXT_MUTED()));
             });
             return;
         }
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Similar rivens:").font(FontId::new(14.0, theme::display_bold())).color(TEXT_SECONDARY()));
-            ui.label(RichText::new(format!("Results: {}", ranked.len())).size(12.0).color(TEXT_MUTED()));
+            ui.label(RichText::new(tr("Similar rivens:")).font(FontId::new(14.0, theme::display_bold())).color(TEXT_SECONDARY()));
+            ui.label(RichText::new(trf("Results: {}", &[&ranked.len()])).size(12.0).color(TEXT_MUTED()));
         });
         ui.add_space(4.0);
         let tallest = ranked.iter().map(|(_, a)| a.attributes.len()).max().unwrap_or(3) as f32;
@@ -353,11 +354,11 @@ impl FinderView {
                         });
                     });
                     let status = match a.owner_status.as_str() {
-                        "ingame" => "In game",
-                        "online" => "Online",
-                        "offline" => "Offline",
-                        "invisible" => "Invisible",
-                        _ => "Unknown",
+                        "ingame" => tr("In game"),
+                        "online" => tr("Online"),
+                        "offline" => tr("Offline"),
+                        "invisible" => tr("Invisible"),
+                        _ => tr("Unknown"),
                     };
                     ui.label(RichText::new(status.to_uppercase()).size(10.5).color(if is_active(&a.owner_status) { POSITIVE() } else { TEXT_MUTED() }));
                     for (name, _, positive) in &a.attributes {
@@ -367,9 +368,9 @@ impl FinderView {
                     }
                     ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!("{} rolls", a.rerolls)).size(12.0).color(TEXT_MUTED()));
+                            ui.label(RichText::new(trn("{} roll", "{} rolls", (a.rerolls) as u64, &[&a.rerolls])).size(12.0).color(TEXT_MUTED()));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                if ui.add(egui::Button::new(RichText::new("OPEN ON WFM ↗").size(11.0).family(theme::body_strong()).color(ACCENT_BRIGHT()))).clicked() {
+                                if ui.add(egui::Button::new(RichText::new(tr("OPEN ON WFM ↗")).size(11.0).family(theme::body_strong()).color(ACCENT_BRIGHT()))).clicked() {
                                     ui.ctx().open_url(egui::OpenUrl::new_tab(a.url()));
                                 }
                             });

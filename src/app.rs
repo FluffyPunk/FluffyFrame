@@ -27,6 +27,7 @@ impl FluffyFrameApp {
         theme::install(&cc.egui_ctx);
         let settings = fluffyframe_core::config::settings::Settings::load();
         crate::stores::apply_theme(&cc.egui_ctx, &settings);
+        crate::i18n::set_locale(&settings.language);
         // FLUFFYFRAME_VIEW opens a specific view (handy for screenshots and debugging).
         let forced = app_meta::env_var("VIEW").and_then(|v| ViewName::from_id(&v.to_string_lossy()));
         let current = if let Some(v) = forced.filter(|_| settings.setup_complete) {

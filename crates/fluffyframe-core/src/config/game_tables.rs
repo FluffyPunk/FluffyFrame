@@ -137,6 +137,58 @@ pub fn hub_label(node: &str) -> String {
     }
 }
 
+/// Railjack nodes (`CrewBattleNode…`): name and Proxima. DE's region export
+/// leaves them out; these come from the community export.
+pub fn railjack_node(tag: &str) -> Option<(&'static str, &'static str)> {
+    Some(match tag {
+        "CrewBattleNode501" => ("Mordo Cluster", "Saturn Proxima"),
+        "CrewBattleNode502" => ("Sover Strait", "Earth Proxima"),
+        "CrewBattleNode503" => ("Bifrost Echo", "Venus Proxima"),
+        "CrewBattleNode504" => ("Arva Vector", "Neptune Proxima"),
+        "CrewBattleNode509" => ("Iota Temple", "Earth Proxima"),
+        "CrewBattleNode511" => ("Beacon Shield Ring", "Venus Proxima"),
+        "CrewBattleNode512" => ("Orvin-Haarc", "Venus Proxima"),
+        "CrewBattleNode513" => ("Vesper Strait", "Venus Proxima"),
+        "CrewBattleNode514" => ("Falling Glory", "Venus Proxima"),
+        "CrewBattleNode515" => ("Luckless Expanse", "Venus Proxima"),
+        "CrewBattleNode516" => ("Nu-gua Mines", "Neptune Proxima"),
+        "CrewBattleNode518" => ("Ogal Cluster", "Earth Proxima"),
+        "CrewBattleNode519" => ("Korm's Belt", "Earth Proxima"),
+        "CrewBattleNode521" => ("Enkidu Ice Drifts", "Neptune Proxima"),
+        "CrewBattleNode522" => ("Bendar Cluster", "Earth Proxima"),
+        "CrewBattleNode523" => ("Mammon's Prospect", "Neptune Proxima"),
+        "CrewBattleNode524" => ("Sovereign Grasp", "Neptune Proxima"),
+        "CrewBattleNode525" => ("Brom Cluster", "Neptune Proxima"),
+        "CrewBattleNode526" => ("Khufu Envoy", "Pluto Proxima"),
+        "CrewBattleNode527" => ("Seven Sirens", "Pluto Proxima"),
+        "CrewBattleNode528" => ("Obol Crossing", "Pluto Proxima"),
+        "CrewBattleNode529" => ("Profit Margin", "Pluto Proxima"),
+        "CrewBattleNode530" => ("Kasio's Rest", "Saturn Proxima"),
+        "CrewBattleNode531" => ("Fenton's Field", "Pluto Proxima"),
+        "CrewBattleNode533" => ("Nodo Gap", "Saturn Proxima"),
+        "CrewBattleNode534" => ("Lupal Pass", "Saturn Proxima"),
+        "CrewBattleNode535" => ("Vand Cluster", "Saturn Proxima"),
+        "CrewBattleNode536" => ("Peregrine Axis", "Pluto Proxima"),
+        "CrewBattleNode538" => ("Calabash", "Veil Proxima"),
+        "CrewBattleNode539" => ("Numina", "Veil Proxima"),
+        "CrewBattleNode540" => ("Arc Silver", "Veil Proxima"),
+        "CrewBattleNode541" => ("Erato", "Veil Proxima"),
+        "CrewBattleNode542" => ("Lu-yan", "Veil Proxima"),
+        "CrewBattleNode543" => ("Sabmir Cloud", "Veil Proxima"),
+        "CrewBattleNode550" => ("Nsu Grid", "Veil Proxima"),
+        "CrewBattleNode553" => ("Flexa", "Veil Proxima"),
+        "CrewBattleNode554" => ("H-2 Cloud", "Veil Proxima"),
+        "CrewBattleNode555" => ("R-9 Cloud", "Veil Proxima"),
+        "CrewBattleNode556" => ("Free Flight", "Earth Proxima"),
+        "CrewBattleNode557" => ("Kuva Lich Confrontation", "Saturn Proxima"),
+        "CrewBattleNode558" => ("Sister of Parvos Confrontation", "Neptune Proxima"),
+        "CrewBattleNode559" => ("Technocyte Coda Concert", "Earth Proxima"),
+        "CrewBattleNode560" => ("The Kuva Wytch", "Uranus Proxima"),
+        "CrewBattleNode561" => ("Scoria's Angel", "Uranus Proxima"),
+        _ => return None,
+    })
+}
+
 pub fn syndicate_label(tag: &str) -> String {
     let label = match tag {
         "ArbitersSyndicate" => "Arbiters of Hexis",
@@ -379,5 +431,7 @@ mod tests {
         assert_eq!(mission_type_label("MT_NEW_THING"), "New Thing");
         assert_eq!(void_tier("VoidT4Hard"), Some("Axi"));
         assert_eq!(syndicate_label("ArbitersSyndicate"), "Arbiters of Hexis");
+        assert_eq!(railjack_node("CrewBattleNode502"), Some(("Sover Strait", "Earth Proxima")));
+        assert_eq!(railjack_node("SolNode1"), None);
     }
 }

@@ -61,6 +61,8 @@ pub struct Settings {
     pub theme_preset: String,
     /// "sharp" | "soft" | "round"
     pub corner_style: String,
+    /// Interface language code ("en", "uk").
+    pub language: String,
     /// Inventory shows rows instead of cards.
     pub inventory_rows: bool,
     /// Unveiled rivens as small cards instead of the riven card art.
@@ -106,6 +108,7 @@ impl Default for Settings {
             theme: ThemeChoice::Dark,
             theme_preset: "default".into(),
             corner_style: "soft".into(),
+            language: "en".into(),
             inventory_rows: false,
             riven_compact: false,
             checklist: Default::default(),

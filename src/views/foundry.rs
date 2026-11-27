@@ -10,6 +10,7 @@ use super::need_inventory;
 use crate::components::{format, ui as kit};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Tab {
@@ -29,15 +30,15 @@ impl Tab {
     const ALL: [Tab; 9] = [Tab::All, Tab::InProgress, Tab::Warframe, Tab::Primary, Tab::Secondary, Tab::Melee, Tab::Archwing, Tab::Companion, Tab::Misc];
     fn label(self) -> &'static str {
         match self {
-            Tab::All => "All",
-            Tab::InProgress => "In Progress",
-            Tab::Warframe => "Warframe",
-            Tab::Primary => "Primary",
-            Tab::Secondary => "Secondary",
-            Tab::Melee => "Melee",
-            Tab::Archwing => "Archwing",
-            Tab::Companion => "Companion",
-            Tab::Misc => "Misc",
+            Tab::All => tr("All"),
+            Tab::InProgress => tr("In Progress"),
+            Tab::Warframe => tr("Warframe"),
+            Tab::Primary => tr("Primary"),
+            Tab::Secondary => tr("Secondary"),
+            Tab::Melee => tr("Melee"),
+            Tab::Archwing => tr("Archwing"),
+            Tab::Companion => tr("Companion"),
+            Tab::Misc => tr("Misc"),
         }
     }
     fn matches(self, kind: ItemKind) -> bool {
@@ -89,44 +90,44 @@ impl FoundryView {
         let rows = foundry::rows(&inv, &db);
         let counts = inv.count_map();
 
-        kit::page_title(ui, "Foundry", None);
+        kit::page_title(ui, tr("Foundry"), None);
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            kit::search(ui, &mut self.search, "Search...", 220.0);
-            kit::labelled(ui, "Prime", |ui| {
+            kit::search(ui, &mut self.search, tr("Search..."), 220.0);
+            kit::labelled(ui, tr("Prime"), |ui| {
                 egui::ComboBox::from_id_salt("prime")
                     .width(100.0)
                     .selected_text(match self.prime {
-                        None => "All",
-                        Some(true) => "Prime",
-                        Some(false) => "Non-prime",
+                        None => tr("All"),
+                        Some(true) => tr("Prime"),
+                        Some(false) => tr("Non-prime"),
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.prime, None, "All");
-                        ui.selectable_value(&mut self.prime, Some(true), "Prime");
-                        ui.selectable_value(&mut self.prime, Some(false), "Non-prime");
+                        ui.selectable_value(&mut self.prime, None, tr("All"));
+                        ui.selectable_value(&mut self.prime, Some(true), tr("Prime"));
+                        ui.selectable_value(&mut self.prime, Some(false), tr("Non-prime"));
                     });
             });
-            kit::labelled(ui, "Claim", |ui| {
+            kit::labelled(ui, tr("Claim"), |ui| {
                 egui::ComboBox::from_id_salt("claim")
                     .width(130.0)
                     .selected_text(match self.claim {
-                        Claim::All => "All",
-                        Claim::Buildable => "Buildable now",
-                        Claim::Missing => "Missing parts",
+                        Claim::All => tr("All"),
+                        Claim::Buildable => tr("Buildable now"),
+                        Claim::Missing => tr("Missing parts"),
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.claim, Claim::All, "All");
-                        ui.selectable_value(&mut self.claim, Claim::Buildable, "Buildable now");
-                        ui.selectable_value(&mut self.claim, Claim::Missing, "Missing parts");
+                        ui.selectable_value(&mut self.claim, Claim::All, tr("All"));
+                        ui.selectable_value(&mut self.claim, Claim::Buildable, tr("Buildable now"));
+                        ui.selectable_value(&mut self.claim, Claim::Missing, tr("Missing parts"));
                     });
             });
-            kit::labelled(ui, "Mastery", |ui| {
-                if kit::chip(ui, self.unmastered_only, "Not mastered").clicked() {
+            kit::labelled(ui, tr("Mastery"), |ui| {
+                if kit::chip(ui, self.unmastered_only, tr("Not mastered")).clicked() {
                     self.unmastered_only = !self.unmastered_only;
                 }
             });
-            if kit::ghost_button(ui, "Reset").clicked() {
+            if kit::ghost_button(ui, tr("Reset")).clicked() {
                 *self = FoundryView::default();
             }
         });
@@ -136,7 +137,7 @@ impl FoundryView {
 
         if self.tab == Tab::InProgress {
             if pending.is_empty() {
-                kit::empty(ui, "Nothing building", "Builds started in the Foundry appear here.");
+                kit::empty(ui, tr("Nothing building"), tr("Builds started in the Foundry appear here."));
             }
             kit::card_grid(ui, 300.0, 64.0, pending.len(), |ui, i| {
                 let p = &pending[i];
@@ -145,9 +146,9 @@ impl FoundryView {
                     egui::Frame::new().inner_margin(Margin::symmetric(14, 10)).show(ui, |ui| {
                         kit::card_title(ui, &p.name);
                         if ready {
-                            ui.label(RichText::new("READY TO CLAIM").size(11.0).color(ACCENT()).family(theme::body_strong()));
+                            ui.label(RichText::new(tr("READY TO CLAIM")).size(11.0).color(ACCENT()).family(theme::body_strong()));
                         } else {
-                            ui.label(RichText::new(format!("Done in {}", format::until(p.completes_at))).size(12.0).color(TEXT_MUTED()));
+                            ui.label(RichText::new(trf("Done in {}", &[&format::until(p.completes_at)])).size(12.0).color(TEXT_MUTED()));
                         }
                     });
                 });
@@ -184,7 +185,7 @@ impl FoundryView {
             .filter(|c| self.prime.is_none_or(|p| p == c.row.result_name.contains("Prime")))
             .collect();
         if cards.is_empty() {
-            kit::empty(ui, "No blueprints", "No owned blueprints match these filters.");
+            kit::empty(ui, tr("No blueprints"), tr("No owned blueprints match these filters."));
             return;
         }
 
@@ -198,7 +199,7 @@ impl FoundryView {
                         kit::remote_image(ui, db.image_url(&c.result).as_deref(), vec2(46.0, 46.0));
                         ui.vertical(|ui| {
                             ui.add(egui::Label::new(RichText::new(&c.row.result_name).family(theme::body_strong()).size(15.0)).truncate());
-                            let (text, color) = if ready { ("READY", ACCENT()) } else { ("MISSING PARTS", TEXT_MUTED()) };
+                            let (text, color) = if ready { (tr("READY"), ACCENT()) } else { (tr("MISSING PARTS"), TEXT_MUTED()) };
                             ui.label(RichText::new(text).size(11.0).color(color).family(theme::body_strong()));
                         });
                     });
@@ -218,21 +219,21 @@ impl FoundryView {
                         ui.horizontal(|ui| {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 4.0;
-                                kit::icon(ui, crate::assets::CREDITS, 16.0).on_hover_text("Credits to build");
+                                kit::icon(ui, crate::assets::CREDITS, 16.0).on_hover_text(tr("Credits to build"));
                                 ui.label(RichText::new(kit::compact_num(c.row.build_price)).color(ACCENT()).family(theme::body_strong()));
                             });
                             if c.row.owned_blueprints > 1 {
-                                ui.label(RichText::new(format!("×{} bp", c.row.owned_blueprints)).size(11.5).color(TEXT_MUTED()));
+                                ui.label(RichText::new(trf("×{} bp", &[&c.row.owned_blueprints])).size(11.5).color(TEXT_MUTED()));
                             }
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 if c.kind.is_equipment() {
                                     if c.mastered {
-                                        kit::pill(ui, "Mastered", POSITIVE());
+                                        kit::pill(ui, tr("Mastered"), POSITIVE());
                                     } else {
-                                        kit::pill(ui, "Not mastered", TEXT_SECONDARY());
+                                        kit::pill(ui, tr("Not mastered"), TEXT_SECONDARY());
                                     }
                                 }
-                                kit::pill(ui, &format!("{} owned", c.owned), TEXT_SECONDARY());
+                                kit::pill(ui, &trf("{} owned", &[&c.owned]), TEXT_SECONDARY());
                             });
                         });
                     });

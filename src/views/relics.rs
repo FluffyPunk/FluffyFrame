@@ -12,6 +12,7 @@ use crate::components::{format, ui as kit};
 use crate::ipc::{Backend, DataCmd};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf, trn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Sort {
@@ -127,61 +128,61 @@ impl RelicsView {
         });
 
         ui.horizontal(|ui| {
-            kit::page_title(ui, &format!("Relic Planner ({} relics)", entries.len()), None);
+            kit::page_title(ui, &trn("Relic Planner ({} relic)", "Relic Planner ({} relics)", (entries.len()) as u64, &[&entries.len()]), None);
         });
         ui.horizontal_wrapped(|ui| {
             let tabs: Vec<(Option<RelicEra>, String)> =
-                std::iter::once((None, "All".to_string())).chain(RelicEra::ALL.iter().map(|e| (Some(*e), e.label().to_string()))).collect();
+                std::iter::once((None, tr("All").to_string())).chain(RelicEra::ALL.iter().map(|e| (Some(*e), e.label().to_string()))).collect();
             ui.allocate_ui(vec2(470.0, 40.0), |ui| kit::tabs(ui, &mut self.era, &tabs));
-            kit::search(ui, &mut self.search, "Search relics...", 180.0);
-            kit::labelled(ui, "Relics", |ui| {
-                egui::ComboBox::from_id_salt("relic-owned").width(110.0).selected_text(if self.owned_only { "Owned only" } else { "All relics" }).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.owned_only, true, "Owned only");
-                    ui.selectable_value(&mut self.owned_only, false, "All relics");
+            kit::search(ui, &mut self.search, tr("Search relics..."), 180.0);
+            kit::labelled(ui, tr("Relics"), |ui| {
+                egui::ComboBox::from_id_salt("relic-owned").width(110.0).selected_text(if self.owned_only { tr("Owned only") } else { tr("All relics") }).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.owned_only, true, tr("Owned only"));
+                    ui.selectable_value(&mut self.owned_only, false, tr("All relics"));
                 });
             });
-            kit::labelled(ui, "Quality", |ui| {
-                egui::ComboBox::from_id_salt("relic-ref").width(110.0).selected_text(self.refinement.label()).show_ui(ui, |ui| {
+            kit::labelled(ui, tr("Quality"), |ui| {
+                egui::ComboBox::from_id_salt("relic-ref").width(110.0).selected_text(tr(self.refinement.label())).show_ui(ui, |ui| {
                     for r in Refinement::ALL {
-                        ui.selectable_value(&mut self.refinement, r, r.label());
+                        ui.selectable_value(&mut self.refinement, r, tr(r.label()));
                     }
                 });
             });
-            kit::labelled(ui, "Vault", |ui| {
+            kit::labelled(ui, tr("Vault"), |ui| {
                 egui::ComboBox::from_id_salt("relic-vault")
                     .width(100.0)
                     .selected_text(match self.vault {
-                        None => "All",
-                        Some(true) => "Vaulted",
-                        Some(false) => "Unvaulted",
+                        None => tr("All"),
+                        Some(true) => tr("Vaulted"),
+                        Some(false) => tr("Unvaulted"),
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.vault, None, "All");
-                        ui.selectable_value(&mut self.vault, Some(true), "Vaulted");
-                        ui.selectable_value(&mut self.vault, Some(false), "Unvaulted");
+                        ui.selectable_value(&mut self.vault, None, tr("All"));
+                        ui.selectable_value(&mut self.vault, Some(true), tr("Vaulted"));
+                        ui.selectable_value(&mut self.vault, Some(false), tr("Unvaulted"));
                     });
             });
-            kit::labelled(ui, "Sort", |ui| {
+            kit::labelled(ui, tr("Sort"), |ui| {
                 egui::ComboBox::from_id_salt("relic-sort")
                     .width(110.0)
                     .selected_text(match self.sort {
-                        Sort::Default => "Default",
-                        Sort::Plat => "EV platinum",
-                        Sort::Ducats => "EV ducats",
-                        Sort::Count => "Copies",
+                        Sort::Default => tr("Default"),
+                        Sort::Plat => tr("EV platinum"),
+                        Sort::Ducats => tr("EV ducats"),
+                        Sort::Count => tr("Copies"),
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.sort, Sort::Default, "Default");
-                        ui.selectable_value(&mut self.sort, Sort::Plat, "EV platinum");
-                        ui.selectable_value(&mut self.sort, Sort::Ducats, "EV ducats");
-                        ui.selectable_value(&mut self.sort, Sort::Count, "Copies");
+                        ui.selectable_value(&mut self.sort, Sort::Default, tr("Default"));
+                        ui.selectable_value(&mut self.sort, Sort::Plat, tr("EV platinum"));
+                        ui.selectable_value(&mut self.sort, Sort::Ducats, tr("EV ducats"));
+                        ui.selectable_value(&mut self.sort, Sort::Count, tr("Copies"));
                     });
             });
         });
         ui.add_space(6.0);
 
         if entries.is_empty() {
-            kit::empty(ui, "No relics", "No relics match these filters.");
+            kit::empty(ui, tr("No relics"), tr("No relics match these filters."));
         }
         let refinement = self.refinement;
         let mut open = None;
@@ -195,15 +196,15 @@ impl RelicsView {
                             ui.spacing_mut().item_spacing.y = 1.0;
                             ui.label(RichText::new(&e.info.name).font(FontId::new(20.0, theme::display_bold())));
                             match e.vaulted {
-                                Some(true) => kit::pill(ui, "Vaulted", NEGATIVE()),
-                                Some(false) => kit::pill(ui, "Unvaulted", INFO()),
+                                Some(true) => kit::pill(ui, tr("Vaulted"), NEGATIVE()),
+                                Some(false) => kit::pill(ui, tr("Unvaulted"), INFO()),
                                 None => kit::pill(ui, "…", TEXT_MUTED()),
                             };
                         });
                         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                             ui.vertical(|ui| {
                                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                                    ui.label(RichText::new(format!("SELECTED EV: {}", refinement.label().to_uppercase())).size(9.5).color(TEXT_MUTED()));
+                                    ui.label(RichText::new(trf("SELECTED EV: {}", &[&tr(refinement.label()).to_uppercase()])).size(9.5).color(TEXT_MUTED()));
                                 });
                                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                                     let dpp = if e.value.platinum > 0.0 { e.value.ducats / e.value.platinum } else { 0.0 };
@@ -236,7 +237,7 @@ impl RelicsView {
                             resp.on_hover_text(format!(
                                 "{}\n{} · {}\n{}",
                                 db.name(&w.unique_name),
-                                w.rarity.label(),
+                                tr(w.rarity.label()),
                                 relic_service::rarity_chance_label(w.rarity, refinement),
                                 format::plat(price_of(&w.unique_name))
                             ));
@@ -290,13 +291,13 @@ impl RelicsView {
                     ui.label(RichText::new(&info.name).font(FontId::new(20.0, theme::display_bold())));
                     ui.horizontal(|ui| {
                         match state.relic_vaulted(&family) {
-                            Some(true) => kit::pill(ui, "Vaulted", NEGATIVE()),
-                            Some(false) => kit::pill(ui, "Unvaulted", INFO()),
+                            Some(true) => kit::pill(ui, tr("Vaulted"), NEGATIVE()),
+                            Some(false) => kit::pill(ui, tr("Unvaulted"), INFO()),
                             None => kit::pill(ui, "…", TEXT_MUTED()),
                         };
                         for (i, r) in Refinement::ALL.iter().enumerate() {
                             if owned[i] > 0 {
-                                kit::pill(ui, &format!("{}: x{}", r.label(), owned[i]), TEXT_SECONDARY());
+                                kit::pill(ui, &format!("{}: x{}", tr(r.label()), owned[i]), TEXT_SECONDARY());
                             }
                         }
                     });
@@ -311,14 +312,14 @@ impl RelicsView {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 for r in Refinement::ALL {
-                    if kit::chip(ui, self.modal_refinement == r, r.label()).clicked() {
+                    if kit::chip(ui, self.modal_refinement == r, tr(r.label())).clicked() {
                         self.modal_refinement = r;
                     }
                 }
             });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Squad:").size(12.5).color(TEXT_MUTED()));
-                for (n, l) in [(1, "Solo"), (2, "2P"), (3, "3P"), (4, "4P")] {
+                ui.label(RichText::new(tr("Squad:")).size(12.5).color(TEXT_MUTED()));
+                for (n, l) in [(1, tr("Solo")), (2, "2P"), (3, "3P"), (4, "4P")] {
                     if kit::chip(ui, self.squad == n, l).clicked() {
                         self.squad = n;
                     }
@@ -329,7 +330,7 @@ impl RelicsView {
             let (total, per) = relic_service::squad_value(info, refinement, self.squad, db, &price_of);
             egui::Grid::new("relic-rewards").striped(true).num_columns(6).spacing([14.0, 7.0]).min_col_width(40.0).show(ui, |ui| {
                 ui.label("");
-                for h in ["Item", "Chance", "Price", "Ducats", "E.V."] {
+                for h in [tr("Item"), tr("Chance"), tr("Price"), tr("Ducats"), "E.V."] {
                     kit::caption(ui, h);
                 }
                 ui.end_row();
@@ -352,10 +353,10 @@ impl RelicsView {
                         }
                         let parent = state.parent(&w.unique_name);
                         if parent.is_some_and(|p| state.mastered.contains(p)) {
-                            kit::pill(ui, "Mastered", POSITIVE());
+                            kit::pill(ui, tr("Mastered"), POSITIVE());
                         }
                         if parent.is_some_and(|p| state.owned(p) > 0) {
-                            kit::pill(ui, "Parent owned", INFO());
+                            kit::pill(ui, tr("Parent owned"), INFO());
                         }
                     });
                     ui.label(RichText::new(relic_service::rarity_chance_label(w.rarity, refinement)).size(12.5).color(TEXT_SECONDARY()));
@@ -374,31 +375,31 @@ impl RelicsView {
             });
             ui.separator();
             let squad = match self.squad {
-                1 => "Solo".to_string(),
+                1 => tr("Solo").to_string(),
                 n => format!("{n}P"),
             };
             let dpp = if total.platinum > 0.0 { total.ducats / total.platinum } else { 0.0 };
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(format!("Expected value ({}, {squad}):", refinement.label())).color(TEXT_SECONDARY()));
+                ui.label(RichText::new(trf("Expected value ({}, {}):", &[&tr(refinement.label()), &squad])).color(TEXT_SECONDARY()));
                 ui.label(RichText::new(format!("~{:.1}", total.platinum)).family(theme::body_strong()).color(ACCENT_BRIGHT()));
-                ui.label(RichText::new("platinum |").color(TEXT_SECONDARY()));
+                ui.label(RichText::new(tr("platinum |")).color(TEXT_SECONDARY()));
                 ui.label(RichText::new(format!("{:.1}", total.ducats)).family(theme::body_strong()).color(ACCENT_BRIGHT()));
-                ui.label(RichText::new(format!("ducats ({dpp:.1} ducats/plat)")).color(TEXT_SECONDARY()));
+                ui.label(RichText::new(trf("ducats ({} ducats/plat)", &[&format!("{:.1}", dpp)])).color(TEXT_SECONDARY()));
             });
             ui.add_space(6.0);
-            egui::CollapsingHeader::new(RichText::new("Where to farm").family(theme::body_strong())).show(ui, |ui| match &state.drops {
+            egui::CollapsingHeader::new(RichText::new(tr("Where to farm")).family(theme::body_strong())).show(ui, |ui| match &state.drops {
                 None => {
                     ui.spinner();
                 }
                 Some(drops) => {
                     let sources = drops.lookup(&format!("{} Relic", info.name));
                     if sources.is_empty() {
-                        ui.label(RichText::new("No current drop locations (vaulted).").color(TEXT_MUTED()));
+                        ui.label(RichText::new(tr("No current drop locations (vaulted).")).color(TEXT_MUTED()));
                     }
                     egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
                         for s in sources.iter().take(20) {
                             ui.horizontal(|ui| {
-                                ui.label(&s.location);
+                                ui.label(format::drop_location(&s.location));
                                 ui.label(RichText::new(&s.detail).color(TEXT_MUTED()));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     ui.label(RichText::new(format!("{:.2}%", s.chance)).family(theme::body_strong()));

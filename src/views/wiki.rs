@@ -10,6 +10,7 @@ use crate::components::{format, ui as kit, widgets};
 use crate::ipc::{Backend, DataCmd};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf, trn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Mode {
@@ -44,18 +45,18 @@ impl WikiView {
                 ui.vertical(|ui| {
                     ui.set_width(width);
                     ui.add_space(10.0);
-                    kit::page_title(ui, "Drop Data", None);
-                    kit::page_subtitle(ui, "Search the full Warframe drop tables for any item's drop locations and rates.");
+                    kit::page_title(ui, tr("Drop Data"), None);
+                    kit::page_subtitle(ui, tr("Search the full Warframe drop tables for any item's drop locations and rates."));
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        let hint = if self.mode == Mode::Item { "Search an item (e.g. Forma)" } else { "Search a location (e.g. Hydron)" };
+                        let hint = if self.mode == Mode::Item { tr("Search an item (e.g. Forma)") } else { tr("Search a location (e.g. Hydron)") };
                         if kit::search(ui, &mut self.search, hint, width - 210.0).changed() {
                             self.selected = None;
                         }
-                        if kit::chip(ui, self.mode == Mode::Item, "By item").clicked() {
+                        if kit::chip(ui, self.mode == Mode::Item, tr("By item")).clicked() {
                             self.mode = Mode::Item;
                         }
-                        if kit::chip(ui, self.mode == Mode::Location, "By location").clicked() {
+                        if kit::chip(ui, self.mode == Mode::Location, tr("By location")).clicked() {
                             self.mode = Mode::Location;
                             self.selected = None;
                         }
@@ -73,7 +74,7 @@ impl WikiView {
                     if self.search.trim().len() < 2 {
                         kit::card(ui, |ui| {
                             ui.set_width(ui.available_width());
-                            ui.vertical_centered(|ui| ui.label(RichText::new("Type to search drop tables.").color(TEXT_SECONDARY())));
+                            ui.vertical_centered(|ui| ui.label(RichText::new(tr("Type to search drop tables.")).color(TEXT_SECONDARY())));
                         });
                         return;
                     }
@@ -83,12 +84,12 @@ impl WikiView {
                             ui.horizontal(|ui| {
                                 kit::remote_image(ui, db.image_url(&item.unique_name).as_deref(), vec2(32.0, 32.0));
                                 ui.label(RichText::new(&item.name).family(theme::body_strong()));
-                                ui.label(RichText::new(item.kind.label()).size(12.0).color(TEXT_MUTED()));
+                                ui.label(RichText::new(tr(item.kind.label())).size(12.0).color(TEXT_MUTED()));
                                 if let Some(drops) = &state.drops {
                                     let n = drops.lookup(&item.name).len();
                                     if n > 0 {
                                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                            ui.label(RichText::new(format!("{n} sources")).size(12.0).color(TEXT_SECONDARY()));
+                                            ui.label(RichText::new(trn("{} source", "{} sources", (n) as u64, &[&n])).size(12.0).color(TEXT_SECONDARY()));
                                         });
                                     }
                                 }
@@ -115,7 +116,7 @@ impl WikiView {
         if hits.is_empty() {
             kit::card(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.vertical_centered(|ui| ui.label(RichText::new("Type a mission node, planet or enemy.").color(TEXT_SECONDARY())));
+                ui.vertical_centered(|ui| ui.label(RichText::new(tr("Type a mission node, planet or enemy.")).color(TEXT_SECONDARY())));
             });
             return;
         }
@@ -124,7 +125,7 @@ impl WikiView {
             if s.location != current {
                 current = &s.location;
                 ui.add_space(6.0);
-                kit::caption(ui, current);
+                kit::caption(ui, &format::drop_location(current));
             }
             ui.horizontal(|ui| {
                 ui.label(crate::components::format::title_case(item));
@@ -138,7 +139,7 @@ impl WikiView {
 
     fn item(&mut self, ui: &mut Ui, state: &AppState, backend: &Backend, db: &fluffyframe_core::services::item_database::ItemDb, unique: &str) {
         let Some(item) = db.get(unique) else { return };
-        if kit::ghost_button(ui, "‹ Back to results").clicked() {
+        if kit::ghost_button(ui, tr("‹ Back to results")).clicked() {
             self.selected = None;
             return;
         }
@@ -152,15 +153,15 @@ impl WikiView {
                 ui.vertical(|ui| {
                     ui.label(RichText::new(&item.name).font(FontId::new(26.0, theme::display_bold())));
                     ui.horizontal(|ui| {
-                        kit::pill(ui, item.kind.label(), TEXT_SECONDARY());
+                        kit::pill(ui, tr(item.kind.label()), TEXT_SECONDARY());
                         if state.rows.iter().any(|r| r.unique_name == unique && r.vaulted) {
-                            kit::pill(ui, "Vaulted", NEGATIVE());
+                            kit::pill(ui, tr("Vaulted"), NEGATIVE());
                         }
                         if item.mastery_req > 0 {
-                            kit::pill(ui, &format!("MR {}", item.mastery_req), ACCENT());
+                            kit::pill(ui, &trf("MR {}", &[&item.mastery_req]), ACCENT());
                         }
                         if let Some(inv) = &state.inventory {
-                            kit::pill(ui, &format!("Owned {}", inv.count_of(unique)), POSITIVE());
+                            kit::pill(ui, &trf("Owned {}", &[&inv.count_of(unique)]), POSITIVE());
                         }
                     });
                     ui.horizontal(|ui| {
@@ -194,8 +195,8 @@ impl WikiView {
                 let ui = &mut cols[0];
                 kit::card(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    kit::card_title(ui, "Recipe");
-                    ui.label(RichText::new(format!("{} cr · {}", format::int(recipe.build_price), format::duration_secs(recipe.build_time_secs))).size(12.0).color(TEXT_MUTED()));
+                    kit::card_title(ui, tr("Recipe"));
+                    ui.label(RichText::new(trf("{} cr · {}", &[&format::int(recipe.build_price), &format::duration_secs(recipe.build_time_secs)])).size(12.0).color(TEXT_MUTED()));
                     let counts = state.inventory.as_ref().map(|i| i.count_map()).unwrap_or_default();
                     for ing in &recipe.ingredients {
                         ui.horizontal(|ui| {
@@ -216,14 +217,14 @@ impl WikiView {
                 let ui = &mut cols[0];
                 kit::card(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    kit::card_title(ui, "Relics");
+                    kit::card_title(ui, tr("Relics"));
                     for (relic, rarity) in &relics {
                         ui.horizontal(|ui| {
                             kit::icon(ui, crate::assets::relic_icon(relic.era.label()), 20.0);
                             ui.label(&relic.name);
-                            kit::pill(ui, rarity.label(), TEXT_SECONDARY());
+                            kit::pill(ui, tr(rarity.label()), TEXT_SECONDARY());
                             if state.relic_vaulted(&relic.family) == Some(true) {
-                                kit::pill(ui, "Vaulted", NEGATIVE());
+                                kit::pill(ui, tr("Vaulted"), NEGATIVE());
                             }
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 ui.label(
@@ -243,7 +244,7 @@ impl WikiView {
             let ui = &mut cols[1];
             kit::card(ui, |ui| {
                 ui.set_width(ui.available_width());
-                kit::card_title(ui, "Drop locations");
+                kit::card_title(ui, tr("Drop locations"));
                 match &state.drops {
                     None => {
                         ui.spinner();
@@ -251,13 +252,13 @@ impl WikiView {
                     Some(drops) => {
                         let sources = drops.lookup(&item.name);
                         if sources.is_empty() {
-                            ui.label(RichText::new("No drop table entries.").color(TEXT_MUTED()));
+                            ui.label(RichText::new(tr("No drop table entries.")).color(TEXT_MUTED()));
                         }
                         for s in sources.iter().take(40) {
                             ui.horizontal(|ui| {
                                 ui.vertical(|ui| {
                                     ui.spacing_mut().item_spacing.y = 0.0;
-                                    ui.label(&s.location);
+                                    ui.label(format::drop_location(&s.location));
                                     if !s.detail.is_empty() {
                                         ui.label(RichText::new(&s.detail).size(11.5).color(TEXT_MUTED()));
                                     }

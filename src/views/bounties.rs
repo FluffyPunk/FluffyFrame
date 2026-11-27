@@ -14,6 +14,7 @@ use crate::components::{format, ui as kit};
 use crate::ipc::{Backend, DataCmd};
 use crate::stores::AppState;
 use crate::theme::{self, *};
+use crate::i18n::{tr, trf};
 
 /// The six factions with bounties: tag and name. The first three come with the
 /// world state; the others from the seeded bounty cycle.
@@ -72,7 +73,7 @@ impl BountiesView {
             ui,
             |ui| {
                 for (i, (tag, name)) in FACTIONS.iter().enumerate() {
-                    if kit::icon_chip(ui, self.faction == i, assets::syndicate_logo(tag), name).clicked() && self.faction != i {
+                    if kit::icon_chip(ui, self.faction == i, assets::syndicate_logo(tag), crate::i18n::tr(name)).clicked() && self.faction != i {
                         self.faction = i;
                         self.row = 0;
                     }
@@ -80,10 +81,10 @@ impl BountiesView {
             },
             |ui| {
                 if expiry.is_some() {
-                    kit::pill(ui, &format!("Rotates in {}", format::until(expiry)), TEXT_SECONDARY());
+                    kit::pill(ui, &trf("Rotates in {}", &[&format::until(expiry)]), TEXT_SECONDARY());
                 }
                 if let Some(f) = book.as_ref().and_then(|b| b.zariman_faction.as_deref()).filter(|_| tag == "ZarimanSyndicate") {
-                    kit::pill(ui, &format!("vs {f}"), theme::faction_color(f));
+                    kit::pill(ui, &trf("vs {}", &[&f]), theme::faction_color(f));
                 }
             },
         );
@@ -114,10 +115,10 @@ impl BountiesView {
             if loading {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new("Loading bounties…").color(TEXT_MUTED()));
+                    ui.label(RichText::new(tr("Loading bounties…")).color(TEXT_MUTED()));
                 });
             } else {
-                kit::empty(ui, "No bounties", "None are listed for this faction right now.");
+                kit::empty(ui, tr("No bounties"), tr("None are listed for this faction right now."));
             }
             return;
         }
@@ -172,7 +173,7 @@ fn seeded_rows<'a>(
             let title = match region {
                 // Some node names say the mission already ("Exterminate: Scaldra").
                 Some(r) if r.name.contains(':') || r.mission_type.is_empty() => Cow::from(r.name.as_str()),
-                Some(r) => format!("{} · {}", r.mission_type, r.name).into(),
+                Some(r) => format!("{} · {}", crate::i18n::tr_any(&r.mission_type), r.name).into(),
                 None => Cow::from(b.node.as_str()),
             };
             let table = tables.get(i).copied();
@@ -205,16 +206,16 @@ fn bounty_row(ui: &mut Ui, r: &Row, selected: bool) -> egui::Response {
             kit::split_row(
                 ui,
                 |ui| {
-                    let levels = format!("Lv {}–{}", r.min_level, r.max_level);
+                    let levels = trf("Lv {}–{}", &[&r.min_level, &r.max_level]);
                     ui.add_sized(vec2(64.0, 16.0), egui::Label::new(RichText::new(levels).size(12.0).color(TEXT_MUTED())));
                     ui.label(RichText::new(r.title.as_ref()).family(theme::body_strong()));
                 },
                 |ui| {
                     if let Some(rot) = r.rotation {
-                        kit::pill(ui, &format!("Rot {rot}"), INFO());
+                        kit::pill(ui, &trf("Rot {}", &[&rot]), INFO());
                     }
                     if r.mastery_req > 0 {
-                        kit::pill(ui, &format!("MR {}", r.mastery_req), TEXT_SECONDARY());
+                        kit::pill(ui, &trf("MR {}", &[&r.mastery_req]), TEXT_SECONDARY());
                     }
                     if let Some(ally) = r.ally {
                         kit::pill(ui, ally, POSITIVE());
@@ -241,7 +242,7 @@ fn drop_table(ui: &mut Ui, r: &Row, loaded: bool) {
         ui.set_width(ui.available_width());
         ui.label(RichText::new(r.title.as_ref()).font(FontId::new(16.0, theme::display_bold())));
         let Some(table) = r.table else {
-            let text = if loaded { "No drop table for this bounty in the drop data." } else { "Loading drop tables…" };
+            let text = if loaded { tr("No drop table for this bounty in the drop data.") } else { tr("Loading drop tables…") };
             ui.label(RichText::new(text).color(TEXT_MUTED()));
             return;
         };
@@ -250,8 +251,8 @@ fn drop_table(ui: &mut Ui, r: &Row, loaded: bool) {
         if rotations.is_empty() {
             rotations = table.rotations.iter().collect();
         }
-        let rot = r.rotation.map(|rot| format!(" · Rotation {rot}")).unwrap_or_default();
-        kit::caption(ui, &format!("Lv {}–{}{rot}", table.min_level, table.max_level));
+        let rot = r.rotation.map(|rot| trf(" · Rotation {}", &[&rot])).unwrap_or_default();
+        kit::caption(ui, &trf("Lv {}–{}{}", &[&table.min_level, &table.max_level, &rot]));
         for (_, rewards) in rotations {
             let mut stage = None;
             for w in rewards {
