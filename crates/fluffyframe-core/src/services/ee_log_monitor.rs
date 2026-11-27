@@ -326,19 +326,17 @@ impl LineParser {
     }
 }
 
-/// Lines already handled from the game's debug output (Windows), so EE.log's
-/// copy of them, written seconds later, is skipped. Lines the capture missed
-/// (before it started, or while another program held it) still come from
-/// EE.log. Counted, for lines that repeat word for word. Empty elsewhere:
-/// only Windows has the capture.
+/// Lines already handled from the game's live debug output (Windows' debug
+/// channel, or Proton's log on Linux), so EE.log's copy of them, written
+/// seconds later, is skipped. Lines the live source missed (before it
+/// started, cut short, or with no Proton log) still come from EE.log.
+/// Counted, for lines that repeat word for word.
 #[derive(Default)]
-#[cfg_attr(not(windows), allow(dead_code))]
 struct Seen {
     counts: HashMap<String, u32>,
     order: VecDeque<String>,
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
 impl Seen {
     /// Lines remembered at most: well over what EE.log lags behind by.
     const MAX: usize = 20_000;
@@ -406,6 +404,8 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
     // The game's process, whose debug output is its log.
     #[cfg(windows)]
     let mut game_pid: Option<u32> = None;
+    #[cfg(not(windows))]
+    let mut proton = super::proton_log::ProtonLog::default();
     let mut ticks_since_resolve = u32::MAX;
     while !stop.load(Ordering::Relaxed) {
         // Re-resolve every ~10 s: the newest log wins when several prefixes exist.
@@ -415,6 +415,8 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
             {
                 game_pid = wf_api::game_pid();
             }
+            #[cfg(not(windows))]
+            proton.resolve();
             let found = ee_log_path::resolve(override_path.as_deref());
             if found != path {
                 offset = found.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()).unwrap_or(0);
@@ -491,13 +493,39 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
             }
             continue;
         }
+        #[cfg(not(windows))]
+        if proton.found() {
+            let until = std::time::Instant::now() + EE_LOG_POLL;
+            loop {
+                let mut events = Vec::new();
+                for text in proton.read() {
+                    for line in debug_lines(&text) {
+                        seen.add(line);
+                        parser.handle(line, &mut events);
+                    }
+                }
+                for e in events {
+                    if tx.send(e).is_err() {
+                        return;
+                    }
+                }
+                if std::time::Instant::now() >= until {
+                    break;
+                }
+                std::thread::sleep(PROTON_POLL);
+            }
+            continue;
+        }
         std::thread::sleep(EE_LOG_POLL);
     }
 }
 
+/// How often Proton's log is read for new lines.
+#[cfg(not(windows))]
+const PROTON_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// One debug string's lines, as EE.log splits them (a dialog's text spans
 /// several, each ending in `\n`).
-#[cfg_attr(not(windows), allow(dead_code))]
 fn debug_lines(text: &str) -> impl Iterator<Item = &str> {
     text.split('\n').map(|l| l.trim_end_matches('\r')).filter(|l| !l.is_empty())
 }
