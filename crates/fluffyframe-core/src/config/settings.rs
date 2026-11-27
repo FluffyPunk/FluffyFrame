@@ -70,6 +70,11 @@ pub struct Settings {
     /// The "check riven" hotkey ("Ctrl+Alt+R"). On Wayland the desktop owns
     /// the key: this is only the one asked for.
     pub riven_hotkey: String,
+    /// The in-game overlay (a riven cycle's rolls over the game).
+    pub overlay_enabled: bool,
+    /// Monitor the overlay goes on (None: Wayland compositors pick the focused
+    /// one; elsewhere the first).
+    pub overlay_monitor: Option<String>,
     /// Dailies/weeklies checklist: task id → reset timestamp it was ticked in.
     pub checklist: std::collections::BTreeMap<String, i64>,
     pub ui_scale: f32,
@@ -118,6 +123,8 @@ impl Default for Settings {
             inventory_rows: false,
             riven_compact: false,
             riven_hotkey: "Ctrl+Alt+R".into(),
+            overlay_enabled: true,
+            overlay_monitor: None,
             checklist: Default::default(),
             ui_scale: 1.0,
             landing_view: "inventory".into(),

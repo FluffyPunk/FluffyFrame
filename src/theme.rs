@@ -225,6 +225,14 @@ fn luminance(c: Color32) -> f32 {
     (0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32) / 255.0
 }
 
+const BARLOW_600: &[u8] = include_bytes!("../assets/fonts/barlow-latin-600-normal.ttf");
+const GOLOS_600: &[u8] = include_bytes!("../assets/fonts/golos-cyrillic-600.ttf");
+
+/// The overlay's fonts, tried in order per character (Latin, then Cyrillic).
+pub fn overlay_fonts() -> Vec<&'static [u8]> {
+    vec![BARLOW_600, GOLOS_600]
+}
+
 fn fonts() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     let add = |fonts: &mut FontDefinitions, name: &str, bytes: &'static [u8]| {
@@ -233,14 +241,14 @@ fn fonts() -> FontDefinitions {
     // The original's weights. The Rajdhani files carry its `letter-spacing: .03em`
     // in their advance widths, since egui has no global letter spacing.
     add(&mut fonts, "barlow-400", include_bytes!("../assets/fonts/barlow-latin-400-normal.ttf"));
-    add(&mut fonts, "barlow-600", include_bytes!("../assets/fonts/barlow-latin-600-normal.ttf"));
+    add(&mut fonts, "barlow-600", BARLOW_600);
     add(&mut fonts, "rajdhani-400", include_bytes!("../assets/fonts/rajdhani-latin-400-normal.ttf"));
     add(&mut fonts, "rajdhani-500", include_bytes!("../assets/fonts/rajdhani-latin-500-normal.ttf"));
     add(&mut fonts, "rajdhani-600", include_bytes!("../assets/fonts/rajdhani-latin-600-normal.ttf"));
     // Cyrillic, which Barlow and Rajdhani lack (Ukrainian UI): Golos Text behind
     // Barlow, Exo 2 behind Rajdhani, cut down to the Cyrillic block.
     add(&mut fonts, "golos-400", include_bytes!("../assets/fonts/golos-cyrillic-400.ttf"));
-    add(&mut fonts, "golos-600", include_bytes!("../assets/fonts/golos-cyrillic-600.ttf"));
+    add(&mut fonts, "golos-600", GOLOS_600);
     add(&mut fonts, "exo2-400", include_bytes!("../assets/fonts/exo2-cyrillic-400.ttf"));
     add(&mut fonts, "exo2-500", include_bytes!("../assets/fonts/exo2-cyrillic-500.ttf"));
     add(&mut fonts, "exo2-600", include_bytes!("../assets/fonts/exo2-cyrillic-600.ttf"));

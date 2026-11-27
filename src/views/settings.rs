@@ -30,6 +30,8 @@ pub struct SettingsView {
     fissure_mission: String,
     /// The riven hotkey button waits for the new key.
     recording_hotkey: bool,
+    /// Monitors for the overlay picker, listed when the panel is first shown.
+    monitors: Option<Vec<fluffyframe_overlay::Monitor>>,
 }
 
 /// Page width cap (original: `max-w-[1320px]`, centered).
@@ -142,6 +144,9 @@ impl SettingsView {
         }
         let source_changed = s.inventory_source != before.inventory_source;
         let log_changed = s.ee_log_path != before.ee_log_path;
+        if !s.overlay_enabled && before.overlay_enabled {
+            backend.overlay.hide();
+        }
         if s.riven_hotkey != before.riven_hotkey {
             backend.hotkey.set(&s.riven_hotkey);
         }
@@ -200,6 +205,7 @@ impl SettingsView {
             }
         });
         self.riven_hotkey(m, backend, s);
+        self.overlay(m, backend, s);
         m.panel(tr("Startup"), |ui| {
             row(ui, tr("Open on"), |ui| {
                 egui::ComboBox::from_id_salt("landing")
@@ -282,6 +288,40 @@ impl SettingsView {
             }
             if let Status::Failed(e) = &status {
                 ui.label(RichText::new(trf(tr("Couldn't register this key: {}"), &[e])).size(12.0).color(WARNING()));
+            }
+        });
+    }
+
+    fn overlay(&mut self, m: &mut Masonry, backend: &Backend, s: &mut Settings) {
+        m.panel(tr("In-game overlay"), |ui| {
+            toggle(ui, tr("Show riven cycles over the game"), &mut s.overlay_enabled);
+            let monitors = self.monitors.get_or_insert_with(|| {
+                fluffyframe_overlay::monitors::monitors().unwrap_or_else(|e| {
+                    log::warn!("listing monitors: {e:#}");
+                    Vec::new()
+                })
+            });
+            row(ui, tr("Monitor"), |ui| {
+                let auto = tr("Automatic");
+                let label = |m: &fluffyframe_overlay::Monitor| format!("{} ({}×{})", m.name, m.width, m.height);
+                let selected = s.overlay_monitor.as_deref().map_or(auto.to_string(), |n| {
+                    monitors.iter().find(|m| m.name == n).map_or(n.to_string(), label)
+                });
+                egui::ComboBox::from_id_salt("overlay-monitor").width(180.0).selected_text(selected).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut s.overlay_monitor, None, auto);
+                    for m in monitors.iter() {
+                        ui.selectable_value(&mut s.overlay_monitor, Some(m.name.clone()), label(m));
+                    }
+                });
+            });
+            ui.label(RichText::new(tr("Automatic: the focused monitor on Wayland, the first one elsewhere.")).size(11.5).color(TEXT_MUTED()));
+            ui.add_space(4.0);
+            if kit::ghost_button(ui, tr("Show test panel")).clicked() {
+                let panel = fluffyframe_overlay::overlay::Panel {
+                    title: "FluffyFrame".into(),
+                    lines: vec![tr("The overlay shows here, over the game.").into(), tr("It hides by itself in a few seconds.").into()],
+                };
+                backend.overlay.show_for(s.overlay_monitor.as_deref(), panel, std::time::Duration::from_secs(5));
             }
         });
     }

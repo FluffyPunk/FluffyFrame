@@ -19,6 +19,7 @@ mod i18n;
 mod image_loader;
 mod ipc;
 mod memory;
+mod riven_overlay;
 mod stores;
 mod theme;
 mod theme_presets;

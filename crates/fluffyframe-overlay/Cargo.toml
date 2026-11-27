@@ -1,0 +1,28 @@
+[package]
+name = "fluffyframe-overlay"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+description = "A click-through in-game overlay for FluffyFrame (Windows, X11, Wayland)."
+
+[dependencies]
+log.workspace = true
+anyhow = "1.0.105"
+# Drawing (software, shared by every platform).
+tiny-skia = "0.11.4"
+ab_glyph = "0.2.32"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client = "0.31"
+smithay-client-toolkit = { version = "0.19.2", default-features = false }
+x11rb = { version = "0.13", features = ["randr", "shape"] }
+rustix = { version = "1.1", features = ["event"] }
+
+[target.'cfg(windows)'.dependencies]
+xcap = "=0.9.10"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }

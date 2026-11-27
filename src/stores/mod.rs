@@ -37,6 +37,8 @@ pub struct LogLine {
 
 #[derive(Default)]
 pub struct AppState {
+    /// The riven cycle the overlay last showed (see [`crate::riven_overlay`]).
+    pub riven_overlay: Option<String>,
     pub db: Option<Arc<ItemDb>>,
     pub catalog: Option<Arc<Catalog>>,
     pub inventory: Option<Arc<Inventory>>,
@@ -144,6 +146,7 @@ impl AppState {
                 self.stats.save();
                 self.inventory = Some(inv);
                 self.rebuild_rows(backend);
+                crate::riven_overlay::update(self, backend);
             }
             Event::Helper(h) => self.helper = h,
             Event::World(w) => self.world = Some(w),
@@ -193,6 +196,7 @@ impl AppState {
                         inv.rivens.iter_mut().for_each(|r| r.pending = None);
                         self.inventory = Some(Arc::new(inv));
                     }
+                    crate::riven_overlay::update(self, backend);
                 }
             },
             Event::Trade(t) => {

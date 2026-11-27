@@ -10,7 +10,7 @@ name = "fluffyframe"
 path = "src/main.rs"
 
 [workspace]
-members = ["crates/wf-api", "crates/fluffyframe-core"]
+members = ["crates/wf-api", "crates/fluffyframe-core", "crates/fluffyframe-overlay"]
 
 # The app and fluffyframe-core share one version: core reports it as APP_VERSION
 # (User-Agent).
@@ -20,6 +20,7 @@ version = "0.3.0"
 [workspace.dependencies]
 wf-api = { path = "crates/wf-api" }
 fluffyframe-core = { path = "crates/fluffyframe-core" }
+fluffyframe-overlay = { path = "crates/fluffyframe-overlay" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.154"
 log = { version = "0.4", features = ["std"] }
@@ -28,6 +29,7 @@ crossbeam-channel = "0.5.17"
 
 [dependencies]
 fluffyframe-core.workspace = true
+fluffyframe-overlay.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true

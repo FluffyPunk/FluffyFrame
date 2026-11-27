@@ -110,6 +110,7 @@ pub struct Backend {
     log: Sender<LogCmd>,
     presence: Sender<PresenceCmd>,
     pub hotkey: crate::hotkey::Hotkey,
+    pub overlay: fluffyframe_overlay::overlay::Overlay,
 }
 
 impl Backend {
@@ -164,7 +165,9 @@ impl Backend {
             }
         });
 
-        Self { shared, events, data, inventory, prices, market, log, presence, hotkey }
+        let overlay = fluffyframe_overlay::overlay::Overlay::start(crate::theme::overlay_fonts());
+
+        Self { shared, events, data, inventory, prices, market, log, presence, hotkey, overlay }
     }
 
     pub fn data(&self, cmd: DataCmd) {
