@@ -58,6 +58,8 @@ const REROLL: Color32 = Color32::from_rgb(0xf0, 0x6d, 0xff);
 struct Decoded {
     key: [usize; 3],
     list: Vec<(OwnedRiven, DecodedRiven)>,
+    /// Rivens mid-cycle: index into `list` and the new roll on offer.
+    pending: Vec<(usize, OwnedRiven, DecodedRiven)>,
 }
 
 #[derive(Default)]
@@ -195,13 +197,18 @@ impl RivensView {
             self.decoded = None;
             return;
         };
-        let list = inv
-            .rivens
+        let decode = |r: &OwnedRiven| rivens::decode(r, &db.rivens, state.good_rolls.as_deref());
+        let list: Vec<(OwnedRiven, DecodedRiven)> =
+            inv.rivens.iter().filter(|r| !r.is_veiled()).filter_map(|r| Some((r.clone(), decode(r)?))).collect();
+        let pending = list
             .iter()
-            .filter(|r| !r.is_veiled())
-            .filter_map(|r| Some((r.clone(), rivens::decode(r, &db.rivens, state.good_rolls.as_deref())?)))
+            .enumerate()
+            .filter_map(|(i, (r, _))| {
+                let new = r.pending.as_deref()?;
+                Some((i, new.clone(), decode(new)?))
+            })
             .collect();
-        self.decoded = Some(Decoded { key, list });
+        self.decoded = Some(Decoded { key, list, pending });
     }
 
     /// warframe.market riven slug for a riven's weapon.
@@ -251,6 +258,20 @@ impl RivensView {
             kit::empty(ui, tr("No rivens"), tr("No unveiled rivens match these filters."));
         }
         let mut clicked: Option<usize> = None;
+        let mut clicked_pending: Option<usize> = None;
+        // Mid-cycle rivens first: the current roll, then the new one on offer.
+        let cycling = (!decoded.pending.is_empty()).then(|| {
+            kit::GridSection::new(240.0, 0.0, decoded.pending.len() * 2, |ui, i| {
+                let (index, new, new_d) = &decoded.pending[i / 2];
+                let (riven, d) = if i % 2 == 0 { (&decoded.list[*index].0, &decoded.list[*index].1) } else { (new, new_d) };
+                if riven_card(ui, riven, d) {
+                    clicked_pending = Some(*index);
+                }
+            })
+            .aspect(CARD_RATIO, CARD_MAX_W)
+            .gap(20.0)
+            .title(tr("Cycling: current roll and the new one"))
+        });
         let compact = backend.shared.settings.read().unwrap().riven_compact;
         let db = state.db.clone();
         let section = if compact {
@@ -273,8 +294,8 @@ impl RivensView {
             .aspect(CARD_RATIO, CARD_MAX_W)
             .gap(20.0)
         };
-        kit::grid_sections(ui, vec![section]);
-        if let Some(i) = clicked {
+        kit::grid_sections(ui, cycling.into_iter().chain([section]).collect());
+        if let Some(i) = clicked.or(clicked_pending) {
             self.open = Some(i);
             self.show_all_listings = false;
             self.sell = SellForm::default();

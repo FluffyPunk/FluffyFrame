@@ -37,6 +37,10 @@ pub struct OwnedRiven {
     pub curses: Vec<RivenStat>,
     /// Veiled rivens carry their unlock challenge instead of stats.
     pub challenge: Option<RivenChallenge>,
+    /// The roll a cycle offered, until it is kept or rejected in game
+    /// (`PendingRerollFingerprint`): the reroll screen's new card.
+    #[serde(default)]
+    pub pending: Option<Box<OwnedRiven>>,
 }
 
 /// A veiled riven's unlock challenge (original: `describeChallengeType`).
@@ -201,14 +205,26 @@ fn stats(list: Option<&Value>) -> Vec<RivenStat> {
         .unwrap_or_default()
 }
 
+/// A fingerprint field: a JSON string (or, in some exports, the object itself).
+fn fingerprint(entry: &Value, key: &str) -> Option<Value> {
+    match entry.get(key)? {
+        Value::String(s) => serde_json::from_str(s).ok(),
+        other => Some(other.clone()),
+    }
+}
+
 pub fn parse_owned(entry: &Value) -> Option<OwnedRiven> {
     let item_type = entry.get("ItemType")?.as_str()?.to_string();
-    let fp: Value = match entry.get("UpgradeFingerprint")? {
-        Value::String(s) => serde_json::from_str(s).ok()?,
-        other => other.clone(),
-    };
+    let mut riven = from_fingerprint(entry, item_type, &fingerprint(entry, "UpgradeFingerprint")?);
+    riven.pending = fingerprint(entry, "PendingRerollFingerprint")
+        .filter(Value::is_object)
+        .map(|fp| Box::new(from_fingerprint(entry, riven.item_type.clone(), &fp)));
+    Some(riven)
+}
+
+fn from_fingerprint(entry: &Value, item_type: String, fp: &Value) -> OwnedRiven {
     let u = |k: &str| fp.get(k).and_then(Value::as_u64).unwrap_or(0) as u32;
-    Some(OwnedRiven {
+    OwnedRiven {
         item_id: entry.get("ItemId").and_then(|v| v.get("$oid")).and_then(Value::as_str).map(str::to_string),
         riven_type: riven_type_label(&item_type).to_string(),
         weapon: fp.get("compat").and_then(Value::as_str).map(str::to_string),
@@ -219,8 +235,9 @@ pub fn parse_owned(entry: &Value) -> Option<OwnedRiven> {
         buffs: stats(fp.get("buffs")),
         curses: stats(fp.get("curses")),
         challenge: fp.get("challenge").filter(|c| c.is_object()).map(parse_challenge),
+        pending: None,
         item_type,
-    })
+    }
 }
 
 // Stat math (original: `services/rivenFingerprint.ts`, `rivenConstants.ts`,
@@ -601,6 +618,7 @@ mod tests {
             buffs,
             curses,
             challenge: None,
+            pending: None,
         };
         let buff = decode(&riven(vec![stat("WeaponAmmoEfficiency")], vec![]), &tables, None).unwrap();
         assert!(buff.stats[0].value > 0.0, "buff reads +X% Ammo Efficiency");
@@ -608,6 +626,31 @@ mod tests {
         let curse = decode(&riven(vec![stat("WeaponRecoilReductionMod")], vec![stat("WeaponAmmoEfficiency")]), &tables, None).unwrap();
         assert!(curse.stats[1].value < 0.0, "curse reads -X% Ammo Efficiency");
         assert!(curse.stats[0].value < 0.0, "recoil buff still reads -X% Weapon Recoil");
+    }
+
+    #[test]
+    fn a_cycled_riven_carries_its_pending_roll() {
+        use serde_json::json;
+        let entry = json!({
+            "ItemType": "/Lotus/Upgrades/Mods/Randomized/LotusRifleRandomModRare",
+            "ItemId": {"$oid": "b"},
+            "UpgradeFingerprint": r#"{"compat":"/W/Gun","lvlReq":12,"lvl":8,"rerolls":4,"pol":"AP_ATTACK","buffs":[{"Tag":"WeaponCritChanceMod","Value":300000000}],"curses":[]}"#,
+            "PendingRerollFingerprint": r#"{"compat":"/W/Gun","lvlReq":12,"lvl":8,"rerolls":4,"pol":"AP_ATTACK","buffs":[{"Tag":"WeaponCritChanceMod","Value":300000000},{"Tag":"WeaponCritDamageMod","Value":1073741823}],"curses":[{"Tag":"WeaponZoomFovMod","Value":0}]}"#
+        });
+        let riven = parse_owned(&entry).unwrap();
+        assert_eq!(riven.buffs.len(), 1);
+        let pending = riven.pending.as_deref().unwrap();
+        assert_eq!(pending.item_id.as_deref(), Some("b"));
+        assert_eq!(pending.rerolls, 4);
+        assert_eq!(pending.buffs.iter().map(|b| b.tag.as_str()).collect::<Vec<_>>(), ["WeaponCritChanceMod", "WeaponCritDamageMod"]);
+        assert_eq!(pending.buffs[1].roll, 1.0);
+        assert_eq!(pending.curses[0].tag, "WeaponZoomFovMod");
+        assert!(pending.pending.is_none());
+
+        // Kept or rejected: the field is gone (or emptied).
+        let mut settled = entry.clone();
+        settled["PendingRerollFingerprint"] = json!("");
+        assert!(parse_owned(&settled).unwrap().pending.is_none());
     }
 
     #[test]

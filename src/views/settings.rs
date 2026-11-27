@@ -1,5 +1,5 @@
 //! Settings (original: `src/views/SettingsView.svelte`, `src/components/settings/*`).
-//! Overlay, OCR and hotkey settings are gone along with those features.
+//! Overlay and OCR settings are gone along with those features.
 
 use egui::{Align, FontId, Layout, RichText, Ui};
 use fluffyframe_core::config::{app_meta, constants, paths};
@@ -28,6 +28,10 @@ pub struct SettingsView {
     tab: Tab,
     ee_log_edit: Option<String>,
     fissure_mission: String,
+    /// The riven hotkey button waits for the new key.
+    recording_hotkey: bool,
+    /// Monitors for the overlay picker, listed when the panel is first shown.
+    monitors: Option<Vec<fluffyframe_overlay::Monitor>>,
 }
 
 /// Page width cap (original: `max-w-[1320px]`, centered).
@@ -140,6 +144,12 @@ impl SettingsView {
         }
         let source_changed = s.inventory_source != before.inventory_source;
         let log_changed = s.ee_log_path != before.ee_log_path;
+        if !s.overlay_enabled && before.overlay_enabled {
+            backend.overlay.hide();
+        }
+        if s.riven_hotkey != before.riven_hotkey {
+            backend.hotkey.set(&s.riven_hotkey);
+        }
         if serde_json::to_string(&s).ok() != serde_json::to_string(&before).ok() {
             stores::update_settings(backend, |cur| *cur = s);
         }
@@ -194,6 +204,8 @@ impl SettingsView {
                 s.setup_complete = false;
             }
         });
+        self.riven_hotkey(m, backend, s);
+        self.overlay(m, backend, s);
         m.panel(tr("Startup"), |ui| {
             row(ui, tr("Open on"), |ui| {
                 egui::ComboBox::from_id_salt("landing")
@@ -205,6 +217,133 @@ impl SettingsView {
                         }
                     });
             });
+        });
+    }
+
+    fn riven_hotkey(&mut self, m: &mut Masonry, backend: &Backend, s: &mut Settings) {
+        use crate::hotkey::{self, Status};
+        m.panel(tr("Riven hotkey"), |ui| {
+            let note = |ui: &mut Ui, text: &str| {
+                ui.label(RichText::new(text).size(11.5).color(TEXT_MUTED()));
+            };
+            note(ui, tr("Press it on the riven cycle screen to read the new roll at once, instead of waiting ~10 s for the game log."));
+            ui.add_space(4.0);
+            let status = backend.hotkey.status();
+            if backend.hotkey.desktop_owned() {
+                row(ui, tr("Key"), |ui| match &status {
+                    Status::Portal(key) if !key.is_empty() => {
+                        ui.label(RichText::new(key).strong());
+                    }
+                    Status::Starting => {
+                        ui.spinner();
+                    }
+                    // Hyprland doesn't tell the portal: look in its binds.
+                    _ => match backend.hotkey.desktop_key() {
+                        Some(key) => {
+                            ui.label(RichText::new(key).strong());
+                        }
+                        None => {
+                            ui.label(RichText::new(tr("Set in your desktop")).color(TEXT_SECONDARY()));
+                        }
+                    },
+                });
+                #[cfg(target_os = "linux")]
+                {
+                    row(ui, tr("Shortcut"), |ui| {
+                        ui.add(egui::Label::new(RichText::new(crate::hotkey::portal_shortcut()).monospace().size(11.5)).selectable(true));
+                    });
+                    note(ui, tr("Your desktop owns this key: change it in its keyboard shortcut settings."));
+                    note(ui, &trf(tr("On Hyprland, bind the shortcut above in its config, e.g. `{}`"), &[&hyprland_bind(&s.riven_hotkey)]));
+                }
+                return;
+            }
+            row(ui, tr("Key"), |ui| {
+                if kit::ghost_button(ui, tr("Reset")).clicked() {
+                    s.riven_hotkey = Settings::default().riven_hotkey;
+                    self.recording_hotkey = false;
+                }
+                let label = if self.recording_hotkey { tr("Press a key…") } else { s.riven_hotkey.as_str() };
+                if kit::ghost_button(ui, label).clicked() {
+                    self.recording_hotkey = !self.recording_hotkey;
+                }
+            });
+            if self.recording_hotkey {
+                let pressed = ui.input(|i| {
+                    i.events.iter().find_map(|e| match e {
+                        egui::Event::Key { key, pressed: true, modifiers, .. } => Some((*key, *modifiers)),
+                        _ => None,
+                    })
+                });
+                match pressed {
+                    Some((egui::Key::Escape, _)) => self.recording_hotkey = false,
+                    Some((key, modifiers)) => match hotkey::combo_of(modifiers, key) {
+                        Some(combo) => {
+                            s.riven_hotkey = combo;
+                            self.recording_hotkey = false;
+                        }
+                        None => note(ui, tr("That key can't be a global hotkey.")),
+                    },
+                    None => note(ui, tr("Hold the modifiers and press the key; Esc cancels.")),
+                }
+            }
+            if let Status::Failed(e) = &status {
+                ui.label(RichText::new(trf(tr("Couldn't register this key: {}"), &[e])).size(12.0).color(WARNING()));
+            }
+        });
+    }
+
+    fn overlay(&mut self, m: &mut Masonry, backend: &Backend, s: &mut Settings) {
+        m.panel(tr("In-game overlay"), |ui| {
+            toggle(ui, tr("Show riven cycles over the game"), &mut s.overlay_enabled);
+            let monitors = self.monitors.get_or_insert_with(|| {
+                fluffyframe_overlay::monitors::monitors().unwrap_or_else(|e| {
+                    log::warn!("listing monitors: {e:#}");
+                    Vec::new()
+                })
+            });
+            row(ui, tr("Monitor"), |ui| {
+                let auto = tr("Automatic");
+                let label = |m: &fluffyframe_overlay::Monitor| format!("{} ({}×{})", m.name, m.width, m.height);
+                let selected = s.overlay_monitor.as_deref().map_or(auto.to_string(), |n| {
+                    monitors.iter().find(|m| m.name == n).map_or(n.to_string(), label)
+                });
+                egui::ComboBox::from_id_salt("overlay-monitor").width(180.0).selected_text(selected).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut s.overlay_monitor, None, auto);
+                    for m in monitors.iter() {
+                        ui.selectable_value(&mut s.overlay_monitor, Some(m.name.clone()), label(m));
+                    }
+                });
+            });
+            ui.label(RichText::new(tr("Automatic: the focused monitor on Wayland, the first one elsewhere.")).size(11.5).color(TEXT_MUTED()));
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let editing = backend.overlay.editing();
+                let label = if editing { tr("Lock layout") } else { tr("Edit layout") };
+                if kit::ghost_button(ui, label).clicked() {
+                    backend.overlay.set_editing((!editing).then(|| fluffyframe_overlay::overlay::Panel {
+                        title: tr("Riven overlay").into(),
+                        lines: vec![
+                            tr("Drag to move it.").into(),
+                            tr("Drag the bottom-right corner to resize it.").into(),
+                            tr("Lock it in Settings when done.").into(),
+                        ],
+                    }));
+                }
+                if kit::ghost_button(ui, tr("Reset layout")).clicked() {
+                    s.overlay_layout = Default::default();
+                    backend.overlay.set_layout(crate::ipc::overlay_layout(s.overlay_layout));
+                }
+            });
+            if backend.overlay.editing() {
+                ui.label(RichText::new(tr("The overlay is unlocked: drag it, or its corner to resize. Its position and size are saved when locked.")).size(11.5).color(WARNING()));
+            }
+            if kit::ghost_button(ui, tr("Show test panel")).clicked() {
+                let panel = fluffyframe_overlay::overlay::Panel {
+                    title: "FluffyFrame".into(),
+                    lines: vec![tr("The overlay shows here, over the game.").into(), tr("It hides by itself in a few seconds.").into()],
+                };
+                backend.overlay.show_for(s.overlay_monitor.as_deref(), panel, std::time::Duration::from_secs(5));
+            }
         });
     }
 
@@ -396,4 +535,15 @@ impl SettingsView {
             ui.label(RichText::new(tr("Not affiliated with Digital Extremes.")).size(11.5).color(TEXT_MUTED()));
         });
     }
+}
+
+/// A `hyprland.conf` line binding the riven hotkey's portal shortcut to
+/// `combo` ("Ctrl+Alt+R" →
+/// "bind = CTRL ALT, R, global, fyi.fluffypunk.fluffyframe:check-riven").
+#[cfg(target_os = "linux")]
+fn hyprland_bind(combo: &str) -> String {
+    let mut parts: Vec<String> = combo.split('+').map(|p| p.trim().to_uppercase()).collect();
+    let key = parts.pop().unwrap_or_default();
+    let mods: Vec<&str> = parts.iter().map(|m| if m == "CTRL" || m == "CONTROL" { "CTRL" } else { m.as_str() }).collect();
+    format!("bind = {}, {key}, global, {}", mods.join(" "), crate::hotkey::portal_shortcut())
 }

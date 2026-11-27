@@ -68,6 +68,41 @@ pub enum LogEvent {
     InventorySynced,
     /// A market purchase went through (the purchase celebration screen).
     PurchaseCompleted,
+    /// A riven cycle was sent to DE's servers: its new roll is pending in
+    /// the inventory.
+    RivenCycled,
+    /// The roll to keep after a cycle was chosen and sent: nothing is pending.
+    RivenChosen,
+}
+
+/// The riven cycle screen opening.
+const REROLL_SCREEN: &str = "Created /Lotus/Interface/OmegaRerollSelection.swf";
+/// The "please wait" dialog the game shows while a request is with DE's
+/// servers (the key, not its translation).
+const SERVER_WAIT: &str = "NavBar_QuickMatchPleaseWait";
+/// A wait this long after the cycle screen opened can be its request: the
+/// log doesn't say when the screen closes.
+const REROLL_SESSION_SECS: f64 = 15.0 * 60.0;
+/// A dialog answered "Yes" (`Dialog::SendResult(4)`; "No" is 5).
+const DIALOG_YES: &str = "Dialog::SendResult(4)";
+const DIALOG_OPENED: &str = "Dialog::CreateOkCancel(description=";
+/// The wait follows the "Yes" that sent the request within this (0.125s in logs).
+const YES_TO_WAIT_SECS: f64 = 1.0;
+
+/// Whether a confirm dialog's question shows a number. The cycle confirm
+/// names its Kuva cost ("…cycle Caustacyst Acriata for 3,500?"); choosing the
+/// roll ("Cycle Riven into current selection?") doesn't. The wording is
+/// translated, the digits aren't.
+fn dialog_has_number(line: &str) -> bool {
+    let Some(start) = line.find(DIALOG_OPENED) else { return false };
+    let rest = &line[start + DIALOG_OPENED.len()..];
+    let question = rest.find("title=").map_or(rest, |end| &rest[..end]);
+    question.chars().any(|c| c.is_ascii_digit())
+}
+
+/// The seconds-since-start stamp a log line begins with ("42.894 Sys …").
+fn line_time(line: &str) -> Option<f64> {
+    line.split_whitespace().next()?.parse().ok()
 }
 
 /// Strips platform glyphs (PUA code points, U+FFFD and trailing non-ASCII).
@@ -202,6 +237,12 @@ pub struct LineParser {
     dialog_open: bool,
     dialog_sealed: bool,
     last_dialog: Option<Vec<String>>,
+    /// When the riven cycle screen last opened (log time).
+    reroll_screen_at: Option<f64>,
+    /// Whether the last confirm dialog showed a number (a cycle's cost).
+    dialog_numbered: bool,
+    /// The last "Yes": when, and whether its dialog showed a number.
+    yes: Option<(f64, bool)>,
 }
 
 impl LineParser {
@@ -223,6 +264,24 @@ impl LineParser {
         }
         if line.contains("Created /Lotus/Interface/PurchaseCelebration.swf") {
             out.push(LogEvent::PurchaseCompleted);
+        }
+        if line.contains(REROLL_SCREEN) {
+            self.reroll_screen_at = line_time(line);
+        }
+        if line.contains(SERVER_WAIT) {
+            // A request sent by a "Yes" on the cycle screen: a cycle when its
+            // dialog showed the cost, else the choice of roll.
+            if let (Some(opened), Some(now), Some((yes_at, cycle))) = (self.reroll_screen_at, line_time(line), self.yes.take())
+                && (0.0..REROLL_SESSION_SECS).contains(&(now - opened))
+                && (0.0..YES_TO_WAIT_SECS).contains(&(now - yes_at))
+            {
+                out.push(if cycle { LogEvent::RivenCycled } else { LogEvent::RivenChosen });
+            }
+        } else if line.contains(DIALOG_OPENED) {
+            self.dialog_numbered = dialog_has_number(line);
+        }
+        if line.contains(DIALOG_YES) {
+            self.yes = line_time(line).map(|t| (t, self.dialog_numbered));
         }
         if line.contains(TRADE_SUCCESS) {
             let lines = if self.dialog_open { Some(std::mem::take(&mut self.dialog)) } else { self.last_dialog.take() };
@@ -419,6 +478,41 @@ mod tests {
             p.handle(line, &mut ev);
         }
         assert!(matches!(ev.as_slice(), [LogEvent::InventorySynced, LogEvent::PurchaseCompleted, LogEvent::MissionEnded]));
+    }
+
+    #[test]
+    fn riven_cycle_events() {
+        // From a real log: the screen opens, a cycle is confirmed, then the
+        // new roll is chosen; each request shows the wait dialog.
+        let mut p = LineParser::default();
+        let mut ev = Vec::new();
+        let wait = |t: &str| format!("{t} Script [Info]: Dialog.lua: Dialog::CreateOkCancel(description=/Lotus/Language/Menu/NavBar_QuickMatchPleaseWait, title= leftItem=nil, rightItem=nil)");
+        let ask = |t: &str, q: &str| format!("{t} Script [Info]: Dialog.lua: Dialog::CreateOkCancel(description={q}, title= leftItem=/Menu/Confirm_Item_Yes, rightItem=/Menu/Confirm_Item_No)");
+        let answer = |t: &str, yes: bool| format!("{t} Script [Info]: Dialog.lua: Dialog::SendResult({})", if yes { 4 } else { 5 });
+        for line in [
+            // Before the screen: not a cycle.
+            answer("30.000", true),
+            wait("30.120"),
+            "42.894 Sys [Info]: Created /Lotus/Interface/OmegaRerollSelection.swf".to_string(),
+            ask("44.553", "Are you sure you want to cycle Caustacyst Acriata for 3,500?"),
+            answer("45.236", true),
+            wait("45.361"),
+            // "No" to the choice sends nothing; "Yes" sends it.
+            ask("465.280", "Cycle Riven into current selection?"),
+            answer("467.877", false),
+            ask("469.527", "Cycle Riven into current selection?"),
+            answer("470.121", true),
+            wait("470.246"),
+            // A wait no "Yes" sent (matchmaking): not a cycle.
+            wait("480.000"),
+            // Translated: the cost's digits still tell the cycle.
+            ask("500.000", "Ви впевнені, що хочете змінити Nukor Acri-gelilis за 7 000?"),
+            answer("500.500", true),
+            wait("500.625"),
+        ] {
+            p.handle(&line, &mut ev);
+        }
+        assert!(matches!(ev.as_slice(), [LogEvent::RivenCycled, LogEvent::RivenChosen, LogEvent::RivenCycled]));
     }
 
     #[test]
