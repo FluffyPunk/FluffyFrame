@@ -27,7 +27,8 @@ pub enum Status {
     /// Registered with the system under this key.
     Registered(String),
     /// Bound through the desktop portal: the key the desktop shows for it
-    /// (empty: none bound yet).
+    /// (empty: none bound yet). Wayland only; settings read it everywhere.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Portal(String),
     Failed(String),
 }
