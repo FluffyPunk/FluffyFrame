@@ -21,6 +21,7 @@ pub mod wiki_art;
 // Inventory
 pub mod api_helper_runner;
 pub mod inventory;
+pub mod invigorations;
 pub mod inventory_import;
 
 // Derived inventory views

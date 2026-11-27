@@ -51,6 +51,15 @@ fn handle(shared: &Shared, emitter: &Emitter, inventory: &Sender<InventoryCmd>, 
             let _ = inventory.send(InventoryCmd::LoginDetected);
         }
         LogEvent::GameStarted => shared.logged_in.store(false, Ordering::Relaxed),
+        LogEvent::PlayerName(name) => {
+            let mut s = shared.settings.write().unwrap();
+            if s.player_name.as_ref() != Some(name) {
+                s.player_name = Some(name.clone());
+                if let Err(e) = s.save() {
+                    log::warn!("saving settings: {e}");
+                }
+            }
+        }
         LogEvent::Whisper(from) => {
             if shared.settings.read().unwrap().notify_whispers {
                 notifications::send(tr("New whisper"), &trf("{} sent you a message", &[&from]));

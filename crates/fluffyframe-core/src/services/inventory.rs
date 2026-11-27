@@ -227,6 +227,9 @@ pub struct Inventory {
     /// Intrinsic skill (`LPS_*`: railjack, `LPS_DRIFT_*`: drifter) → rank.
     #[serde(default)]
     pub intrinsics: HashMap<String, u64>,
+    /// Helminth invigorations last rolled: week index and its base suits.
+    #[serde(default)]
+    pub invigoration_week: Option<(i64, Vec<String>)>,
     pub affiliations: Vec<Affiliation>,
     /// Standing left today, shared by the aligned syndicates.
     pub daily_standing: Option<i64>,
@@ -400,6 +403,13 @@ impl Inventory {
                 .filter(|(k, _)| k.starts_with("LPS_"))
                 .filter_map(|(k, v)| Some((k.clone(), v.as_u64()?.min(MAX_INTRINSIC_RANK))))
                 .collect();
+        }
+
+        if let Some(foundry) = root.get("InfestedFoundry")
+            && let Some(index) = foundry.get("InvigorationIndex").and_then(Value::as_i64)
+        {
+            let suits = arr(foundry, "InvigorationSuitOfferings").iter().filter_map(Value::as_str).map(str::to_string).collect();
+            inv.invigoration_week = Some((index, suits));
         }
 
         for entry in arr(&root, "PendingRecipes") {

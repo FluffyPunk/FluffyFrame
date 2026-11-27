@@ -305,6 +305,10 @@ pub struct ItemDb {
     pub market_blueprints: std::collections::HashSet<String>,
     /// Mastery XP per star chart node tag (see `region_mastery`).
     pub node_mastery: HashMap<String, super::region_mastery::NodeMastery>,
+    /// Base suits (`…BaseSuit`) in Helminth invigoration draw order.
+    pub invigoration_suits: Vec<String>,
+    /// Base suit → the warframe's name ("Frost").
+    pub suit_names: HashMap<String, String>,
     /// Sigil uniqueName → texture. Sigils aren't items here (ExportFlavour isn't
     /// downloaded), but syndicate emblems are sigils.
     sigil_textures: HashMap<String, String>,
@@ -455,6 +459,22 @@ impl ItemDb {
             };
             db.items.insert(unique, info);
         };
+
+        let suits: Vec<(&str, &str, &str)> = exports
+            .array("ExportWarframes", "ExportWarframes")
+            .iter()
+            .filter_map(|v| {
+                let s = |k: &str| v.get(k).and_then(Value::as_str);
+                Some((s("productCategory")?, s("parentName")?, s("name").unwrap_or("")))
+            })
+            .collect();
+        db.invigoration_suits = super::invigorations::suit_order(suits.iter().map(|(c, p, _)| (*c, *p)));
+        for (category, parent, name) in &suits {
+            // The base warframe's name: not a Prime or Umbra variant.
+            if *category == "Suits" && !name.is_empty() && !name.contains("Prime") && !name.contains("Umbra") {
+                db.suit_names.entry(parent.to_string()).or_insert_with(|| sanitize_name(name));
+            }
+        }
 
         for file in ["ExportWarframes", "ExportWeapons", "ExportSentinels"] {
             for v in exports.array(file, file) {

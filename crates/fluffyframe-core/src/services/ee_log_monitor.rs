@@ -58,6 +58,8 @@ pub enum LogEvent {
     /// The log was recreated: the game (re)started.
     GameStarted,
     LoginComplete,
+    /// The account's in-game name ("Logged in <name>").
+    PlayerName(String),
     Whisper(String),
     TradeCompleted(LogTrade),
     MissionEnded,
@@ -170,21 +172,28 @@ fn is_login_line(line: &str) -> bool {
     line.contains("MainMenu::LoginDone result=true") || line.contains("Logging in as ")
 }
 
-/// Whether the log already shows a login: following starts at the end of the
-/// file, so a game logged in before the app started would otherwise look
-/// logged out until its next restart.
-fn logged_in_already(path: &std::path::Path) -> bool {
+/// "Sys [Info]: Logged in <name>" → the name, without platform glyphs.
+fn player_name(line: &str) -> Option<String> {
+    let name = strip_platform_glyphs(line.split_once("Sys [Info]: Logged in ")?.1.trim());
+    Some(name).filter(|n| !n.is_empty() && !n.contains(' '))
+}
+
+/// The login state and player name the log already shows: following starts at
+/// the end of the file, so a game logged in before the app started would
+/// otherwise look logged out (and nameless) until its next restart.
+fn catch_up(path: &std::path::Path) -> (bool, Option<String>) {
     use std::io::BufRead;
-    let Ok(file) = std::fs::File::open(path) else { return false };
+    let Ok(file) = std::fs::File::open(path) else { return (false, None) };
     let mut reader = std::io::BufReader::new(file);
+    let (mut logged_in, mut name) = (false, None);
     let mut line = Vec::new();
     while reader.read_until(b'\n', &mut line).is_ok_and(|n| n > 0) {
-        if is_login_line(&String::from_utf8_lossy(&line)) {
-            return true;
-        }
+        let text = String::from_utf8_lossy(&line);
+        logged_in |= is_login_line(&text);
+        name = player_name(&text).or(name);
         line.clear();
     }
-    false
+    (logged_in, name)
 }
 
 #[derive(Default)]
@@ -199,6 +208,9 @@ impl LineParser {
     pub fn handle(&mut self, line: &str, out: &mut Vec<LogEvent>) {
         if is_login_line(line) {
             out.push(LogEvent::LoginComplete);
+        }
+        if let Some(name) = player_name(line) {
+            out.push(LogEvent::PlayerName(name));
         }
         if let Some(name) = parse_whisper_username(line) {
             out.push(LogEvent::Whisper(name));
@@ -300,7 +312,8 @@ fn run(override_path: Option<String>, tx: Sender<LogEvent>, stop: Arc<AtomicBool
                 }
                 // Only the login state is caught up: older whispers and trades
                 // were already handled (or missed) and would only repeat.
-                if path.as_deref().is_some_and(logged_in_already) && tx.send(LogEvent::LoginComplete).is_err() {
+                let (logged_in, name) = path.as_deref().map(catch_up).unwrap_or_default();
+                if (logged_in && tx.send(LogEvent::LoginComplete).is_err()) || name.is_some_and(|n| tx.send(LogEvent::PlayerName(n)).is_err()) {
                     return;
                 }
             }
@@ -352,9 +365,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let log = dir.join("EE.log");
         std::fs::write(&log, b"1.0 Sys [Info]: boot\n\xff\xfe junk\n12.3 Sys [Info]: Logging in as Tenno\n").unwrap();
-        assert!(logged_in_already(&log));
-        std::fs::write(&log, b"1.0 Sys [Info]: boot\n").unwrap();
-        assert!(!logged_in_already(&log));
+        assert_eq!(catch_up(&log), (true, None));
+        std::fs::write(&log, b"1.0 Sys [Info]: boot\n2.0 Sys [Info]: Logged in Tenno\r\n").unwrap();
+        assert_eq!(catch_up(&log), (false, Some("Tenno".into())));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

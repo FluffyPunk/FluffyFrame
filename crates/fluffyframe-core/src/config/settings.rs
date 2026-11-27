@@ -96,6 +96,9 @@ pub struct Settings {
     /// warframe.market status "In game" from logging in to Warframe until it
     /// closes (then put back), and "Invisible" when the app quits.
     pub wfm_auto_status: bool,
+    /// The in-game name from EE.log, kept for when the game isn't running
+    /// (Helminth invigorations are seeded with it).
+    pub player_name: Option<String>,
 }
 
 impl Default for Settings {
@@ -129,6 +132,7 @@ impl Default for Settings {
             keep_spare_copies: 0,
             wfm_email: None,
             wfm_auto_status: true,
+            player_name: None,
         }
     }
 }

@@ -325,6 +325,7 @@ impl WorldView {
                         }
                     });
                 }
+                section(ui, tr("Helminth invigorations"), |ui| invigorations(ui, state, backend));
                 }
             });
         });
@@ -429,6 +430,87 @@ impl WorldView {
 }
 
 /// Collapsible titled block (original: `CollapsibleSection.svelte`).
+/// How many weeks the invigorations section shows.
+const INVIGORATION_WEEKS: usize = 4;
+
+/// This week's Helminth invigorations and the next few (browse.wf's oracle,
+/// computed locally): seeded with the player's name, chained from the
+/// offerings the account last rolled.
+fn invigorations(ui: &mut Ui, state: &AppState, backend: &Backend) {
+    use fluffyframe_core::services::invigorations;
+    let Some(db) = state.db.as_deref() else { return };
+    let saved = stores::settings(backend).player_name;
+    let Some(name) = saved.or_else(|| state.session.as_ref().and_then(|s| s.ingame_name.clone())) else {
+        kit::empty(ui, tr("Player name unknown"), tr("Log in to Warframe with the game log found, or sign in to warframe.market."));
+        return;
+    };
+    // Cross-platform names carry a "#1234" suffix the seed leaves out.
+    let name = name.split('#').next().unwrap_or(&name).to_string();
+    let last_seen = state.inventory.as_ref().and_then(|i| i.invigoration_week.as_ref()).map(|(w, s)| (*w, s.as_slice()));
+    let now = Utc::now();
+    let weeks = invigorations::plan(&name, &db.invigoration_suits, last_seen, now, INVIGORATION_WEEKS);
+    let current = invigorations::week_index(now);
+    kit::caption(ui, &trf("For {} · resets in {}", &[&name, &format::until(Some(invigorations::week_start(current + 1)))]));
+    for (i, w) in weeks.iter().enumerate() {
+        ui.add_space(6.0);
+        let start = invigorations::week_start(w.index).with_timezone(&chrono::Local);
+        let title = match i {
+            0 => tr("This week").to_string(),
+            1 => tr("Next week").to_string(),
+            _ => trf("Week of {} {}", &[&format::month(chrono::Datelike::month(&start)), &chrono::Datelike::day(&start)]),
+        };
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(title).family(theme::body_strong()));
+            let (text, color, tip) = if w.from_inventory {
+                (tr("from your account"), POSITIVE(), tr("The warframes your account rolled this week."))
+            } else if i == 0 && last_seen.is_some() {
+                (tr("calculated"), INFO(), tr("Calculated from the offerings your account last rolled."))
+            } else if i == 0 {
+                (tr("estimated"), WARNING(), tr("No offerings in the inventory: last week's warframes are unknown, so this week's may differ."))
+            } else {
+                (tr("forecast"), TEXT_MUTED(), tr("Assumes you open the Helminth every week: each week leaves out the previous week's warframes."))
+            };
+            kit::pill(ui, text, color).on_hover_text(tip);
+        });
+        egui::Grid::new(("invigorations", w.index)).num_columns(3).spacing([16.0, 4.0]).show(ui, |ui| {
+            for ((suit, off), util) in w.offerings.suits.iter().zip(&w.offerings.offensive).zip(&w.offerings.utility) {
+                let name = db.suit_names.get(suit).cloned().unwrap_or_else(|| suit.rsplit('/').next().unwrap_or(suit).trim_end_matches("BaseSuit").to_string());
+                ui.label(RichText::new(name).family(theme::body_strong()));
+                ui.label(RichText::new(invigoration_text(off)).size(12.5).color(TEXT_SECONDARY()));
+                ui.label(RichText::new(invigoration_text(util)).size(12.5).color(TEXT_SECONDARY()));
+                ui.end_row();
+            }
+        });
+    }
+}
+
+/// An invigoration as the Helminth shows it.
+fn invigoration_text(name: &str) -> &'static str {
+    match name {
+        "PowerStrength" => tr("+200% Ability Strength"),
+        "PowerRange" => tr("+100% Ability Range"),
+        "PowerDuration" => tr("+100% Ability Duration"),
+        "MeleeDamage" => tr("+250% Melee Damage"),
+        "PrimaryDamage" => tr("+250% Primary Damage"),
+        "SecondaryDamage" => tr("+250% Secondary Damage"),
+        "PrimaryCritChance" => tr("+200% Primary Critical Chance"),
+        "SecondaryCritChance" => tr("+200% Secondary Critical Chance"),
+        "MeleeCritChance" => tr("+200% Melee Critical Chance"),
+        "PowerEfficiency" => tr("+75% Ability Efficiency"),
+        "MovementSpeed" => tr("+75% Sprint Speed"),
+        "ParkourSpeed" => tr("+75% Parkour Velocity"),
+        "Health" => tr("+1000 Health"),
+        "Energy" => tr("+200% Energy Max"),
+        "StatusResistance" => tr("Status Immunity"),
+        "ReloadSpeed" => tr("+75% Reload Speed"),
+        "HealthRegen" => tr("+25 Health Regen/s"),
+        "Armor" => tr("+1000 Armor"),
+        "Jumps" => tr("5 Jump Resets"),
+        "EnergyRegen" => tr("+2 Energy Regen"),
+        _ => "?",
+    }
+}
+
 /// One alert: reward icon, mission, and what it pays.
 fn alert_row(ui: &mut Ui, state: &AppState, a: &Alert) {
     egui::Frame::new().fill(BG_WELL()).corner_radius(RADIUS_MD()).inner_margin(Margin::same(8)).show(ui, |ui| {
