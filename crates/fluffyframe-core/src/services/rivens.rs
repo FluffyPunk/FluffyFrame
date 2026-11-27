@@ -251,12 +251,17 @@ pub struct DecodedStat {
 impl DecodedStat {
     /// "+184.8%", "-10%", "x1.08", "+3.7".
     pub fn value_text(&self) -> String {
-        if self.multiplier {
-            return format!("x{}", trim_float(self.value));
-        }
-        let sign = if self.value >= 0.0 { "+" } else { "" };
-        format!("{sign}{}{}", trim_float(self.value), self.unit)
+        card_text(self.value, self.multiplier, self.unit)
     }
+}
+
+/// A card value as printed: "+184.8%", "-10%", "x1.08", "+3.7".
+fn card_text(value: f64, multiplier: bool, unit: &str) -> String {
+    if multiplier {
+        return format!("x{}", trim_float(value));
+    }
+    let sign = if value >= 0.0 { "+" } else { "" };
+    format!("{sign}{}{unit}", trim_float(value))
 }
 
 fn trim_float(v: f64) -> String {
@@ -342,6 +347,134 @@ fn round_stat(raw: f64, percent: bool) -> f64 {
     if percent { (raw * 1000.0).round() / 10.0 } else { (raw * 100.0).round() / 100.0 }
 }
 
+/// Where a stat sits on a riven: buff or curse, how many of each the riven
+/// has, its rank and its weapon's disposition.
+#[derive(Debug, Clone, Copy)]
+pub struct StatContext {
+    pub positive: bool,
+    pub buffs: usize,
+    pub curses: usize,
+    pub rank: u32,
+    pub disposition: f64,
+}
+
+/// The card value of one stat (`roll` 0..1 inside its range), as `decode` and
+/// the calculator print it.
+pub fn card_value(entry: Option<&super::riven_data::RivenEntry>, tag: &str, roll: f64, cx: StatContext) -> f64 {
+    let base = entry.map(|e| e.base).unwrap_or(0.0);
+    let percent = entry.map(|e| e.unit).unwrap_or("%") == "%";
+    let multiplier = is_multiplier(tag);
+    let atten = SPECIFIC_FIT_ATTEN * cx.disposition * BASE_DRAIN;
+    let lvl = (cx.rank + 1) as f64;
+    let roll_mul = 0.9 + 0.2 * roll;
+    let (nb, nc) = (cx.buffs.min(5), cx.curses.min(5));
+    if cx.positive {
+        let raw = base * atten * 1.25f64.powi(nc as i32) * roll_mul * NUM_BUFFS_ATTEN[nb] * lvl;
+        let v = round_stat(raw, percent && !multiplier);
+        if multiplier { ((1.0 + v) * 100.0).round() / 100.0 } else { v }
+    } else {
+        let raw = base.abs() * atten * roll_mul * NUM_BUFFS_CURSE_ATTEN[nb] * NUM_BUFFS_ATTEN[nc] * lvl;
+        let m = round_stat(raw, percent && !multiplier);
+        if multiplier {
+            ((1.0 - m) * 100.0).round() / 100.0
+        } else if base > 0.0 {
+            -m
+        } else {
+            m
+        }
+    }
+}
+
+/// Riven disposition: 1.2 for every weapon that takes one since DE flattened
+/// dispositions (checked against the live export).
+pub const DISPOSITION: f64 = 1.2;
+
+/// The stat counts a riven can roll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Setup {
+    #[default]
+    TwoBuffs,
+    TwoBuffsCurse,
+    ThreeBuffs,
+    ThreeBuffsCurse,
+}
+
+impl Setup {
+    pub const ALL: [Setup; 4] = [Setup::TwoBuffs, Setup::TwoBuffsCurse, Setup::ThreeBuffs, Setup::ThreeBuffsCurse];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Setup::TwoBuffs => "2 buffs",
+            Setup::TwoBuffsCurse => "2 buffs + curse",
+            Setup::ThreeBuffs => "3 buffs",
+            Setup::ThreeBuffsCurse => "3 buffs + curse",
+        }
+    }
+
+    pub fn buffs(self) -> usize {
+        if matches!(self, Setup::ThreeBuffs | Setup::ThreeBuffsCurse) { 3 } else { 2 }
+    }
+
+    pub fn curses(self) -> usize {
+        usize::from(matches!(self, Setup::TwoBuffsCurse | Setup::ThreeBuffsCurse))
+    }
+
+    /// (buff, curse) strength at max rank, as a multiple of base × disposition × 90
+    /// (the usual way to quote them): buffs ×0.99, ×1.2375, ×0.75, ×0.9375 and
+    /// the curse ×0.495, ×0.75, in [`Setup::ALL`] order.
+    pub fn factors(self) -> (f64, Option<f64>) {
+        let (nb, nc) = (self.buffs(), self.curses());
+        let max_rank = (MAX_RANK + 1) as f64;
+        let scale = SPECIFIC_FIT_ATTEN * BASE_DRAIN * max_rank / 90.0;
+        let buff = scale * 1.25f64.powi(nc as i32) * NUM_BUFFS_ATTEN[nb];
+        let curse = (nc > 0).then(|| scale * NUM_BUFFS_CURSE_ATTEN[nb] * NUM_BUFFS_ATTEN[nc]);
+        (buff, curse)
+    }
+}
+
+/// A stat's card values at the worst and best roll.
+#[derive(Debug, Clone)]
+pub struct StatRange {
+    pub tag: String,
+    pub name: String,
+    /// Card values at roll 0 and roll 1; for a curse the second is the harsher one.
+    pub low: f64,
+    pub high: f64,
+    multiplier: bool,
+    unit: &'static str,
+}
+
+impl StatRange {
+    /// "+90.1% to +110.2%".
+    pub fn text(&self) -> String {
+        format!("{} to {}", card_text(self.low, self.multiplier, self.unit), card_text(self.high, self.multiplier, self.unit))
+    }
+}
+
+/// Every stat a riven type can roll, as a buff and (if the setup has one) as a
+/// curse, with its range at `rank` (original: browse.wf's riven calculator).
+pub fn stat_ranges(tables: &super::riven_data::RivenTables, riven_type: &str, setup: Setup, rank: u32) -> (Vec<StatRange>, Vec<StatRange>) {
+    let range = |positive: bool| -> Vec<StatRange> {
+        let cx = StatContext { positive, buffs: setup.buffs(), curses: setup.curses(), rank, disposition: DISPOSITION };
+        tables
+            .entries(riven_type)
+            .iter()
+            .map(|e| {
+                let multiplier = is_multiplier(&e.tag);
+                StatRange {
+                    tag: e.tag.clone(),
+                    name: e.name.clone(),
+                    low: card_value(Some(e), &e.tag, 0.0, cx),
+                    high: card_value(Some(e), &e.tag, 1.0, cx),
+                    multiplier,
+                    unit: if multiplier { "" } else { e.unit },
+                }
+            })
+            .collect()
+    };
+    (range(true), if setup.curses() > 0 { range(false) } else { Vec::new() })
+}
+
 /// Card values, grades and name for an unveiled riven; None when its weapon or
 /// its disposition is missing from the game data.
 pub fn decode(
@@ -353,32 +486,13 @@ pub fn decode(
     let disposition = tables.disposition(compat)?;
     let weapon_name = tables.weapon_name(compat)?.to_string();
     let (nb, nc) = (riven.buffs.len(), riven.curses.len());
-    let atten = SPECIFIC_FIT_ATTEN * disposition * BASE_DRAIN;
-    let lvl = (riven.rank + 1) as f64;
-    let buff_atten = NUM_BUFFS_ATTEN[nb.min(5)];
     let mut stats = Vec::new();
     for (stat, positive) in riven.buffs.iter().map(|s| (s, true)).chain(riven.curses.iter().map(|s| (s, false))) {
         let entry = tables.entry(&riven.item_type, &stat.tag);
-        let base = entry.map(|e| e.base).unwrap_or(0.0);
         let unit = entry.map(|e| e.unit).unwrap_or("%");
         let multiplier = is_multiplier(&stat.tag);
-        let percent = unit == "%";
-        let roll_mul = 0.9 + 0.2 * stat.roll;
-        let value = if positive {
-            let raw = base * atten * 1.25f64.powi(nc as i32) * roll_mul * buff_atten * lvl;
-            let v = round_stat(raw, percent && !multiplier);
-            if multiplier { ((1.0 + v) * 100.0).round() / 100.0 } else { v }
-        } else {
-            let raw = base.abs() * atten * roll_mul * NUM_BUFFS_CURSE_ATTEN[nb.min(5)] * NUM_BUFFS_ATTEN[nc.min(5)] * lvl;
-            let m = round_stat(raw, percent && !multiplier);
-            if multiplier {
-                ((1.0 - m) * 100.0).round() / 100.0
-            } else if base > 0.0 {
-                -m
-            } else {
-                m
-            }
-        };
+        let cx = StatContext { positive, buffs: nb, curses: nc, rank: riven.rank, disposition };
+        let value = card_value(entry, &stat.tag, stat.roll, cx);
         stats.push(DecodedStat {
             name: entry.map(|e| e.name.clone()).unwrap_or_else(|| stat.label(riven.is_melee())),
             tag: stat.tag.clone(),
@@ -412,6 +526,41 @@ pub fn decode(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn setup_factors() {
+        let f: Vec<(f64, Option<f64>)> = Setup::ALL.iter().map(|s| s.factors()).collect();
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-4;
+        let expected = [(0.99, None), (1.2375, Some(0.495)), (0.75, None), (0.9375, Some(0.75))];
+        for ((buff, curse), (eb, ec)) in f.iter().zip(expected) {
+            assert!(near(*buff, eb), "{buff} vs {eb}");
+            assert_eq!(curse.is_some(), ec.is_some());
+            if let (Some(c), Some(e)) = (curse, ec) {
+                assert!(near(*c, e), "{c} vs {e}");
+            }
+        }
+    }
+
+    #[test]
+    fn card_value_matches_setup_factor() {
+        let entry = super::super::riven_data::RivenEntry {
+            tag: "WeaponCritChanceMod".into(),
+            base: 0.016666,
+            name: "Critical Chance".into(),
+            unit: "%",
+            prefix: String::new(),
+            suffix: String::new(),
+        };
+        // Rank 8 rifle crit chance, 2 buffs: 0.016666 × 1.2 × 90 × 0.99 = 178.2%, ±10%.
+        let cx = StatContext { positive: true, buffs: 2, curses: 0, rank: MAX_RANK, disposition: DISPOSITION };
+        assert_eq!(card_value(Some(&entry), &entry.tag, 0.0, cx), 160.4);
+        assert_eq!(card_value(Some(&entry), &entry.tag, 1.0, cx), 196.0);
+        // As the curse of 2 buffs + curse: 0.495 of the same, negative.
+        let curse = StatContext { positive: false, curses: 1, ..cx };
+        assert_eq!(card_value(Some(&entry), &entry.tag, 1.0, curse), -98.0);
+    }
+
     #[test]
     fn every_stat_has_a_label_and_market_name() {
         for tag in crate::config::game_tables::RIVEN_STAT_TAGS {

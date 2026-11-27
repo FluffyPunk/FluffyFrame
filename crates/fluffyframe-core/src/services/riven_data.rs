@@ -137,6 +137,11 @@ impl RivenTables {
         self.weapons.get(unique).and_then(|(_, d)| *d)
     }
 
+    /// Every stat the riven type can roll, in export order.
+    pub fn entries(&self, riven_type: &str) -> &[RivenEntry] {
+        self.mods.get(riven_type).map(Vec::as_slice).unwrap_or(&[])
+    }
+
     /// The riven type's entry for `tag`, with the original's melee fallbacks.
     pub fn entry(&self, riven_type: &str, tag: &str) -> Option<&RivenEntry> {
         let entries = self.mods.get(riven_type)?;

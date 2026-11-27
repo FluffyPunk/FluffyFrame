@@ -21,6 +21,7 @@ enum Tab {
     Unveiled,
     Veiled,
     Finder,
+    Calculator,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -61,6 +62,7 @@ struct Decoded {
 #[derive(Default)]
 pub struct RivensView {
     tab: Tab,
+    calculator: super::riven_calc::RivenCalcView,
     search: String,
     sort: Sort,
     descending: bool,
@@ -145,6 +147,7 @@ impl RivensView {
                 (Tab::Unveiled, format!("Unveiled ({unveiled})")),
                 (Tab::Veiled, format!("Veiled ({veiled_count})")),
                 (Tab::Finder, "Riven Finder".into()),
+                (Tab::Calculator, "Calculator".into()),
             ],
         );
         let mut lookup = None;
@@ -152,6 +155,7 @@ impl RivensView {
             Tab::Unveiled => self.unveiled(ui, state, backend, &mut lookup),
             Tab::Veiled => veiled(ui, inv.as_deref()),
             Tab::Finder => self.finder.ui(ui, state, backend),
+            Tab::Calculator => self.calculator.ui(ui, state),
         }
         if let Some((slug, name)) = lookup {
             let melee = state

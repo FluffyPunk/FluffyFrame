@@ -12,6 +12,7 @@ mod inventory;
 mod market;
 mod mastery;
 mod relics;
+mod riven_calc;
 mod riven_finder;
 mod rivens;
 mod settings;
