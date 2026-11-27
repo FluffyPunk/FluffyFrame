@@ -15,7 +15,7 @@ members = ["crates/wf-api", "crates/fluffyframe-core", "crates/fluffyframe-overl
 # The app and fluffyframe-core share one version: core reports it as APP_VERSION
 # (User-Agent).
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 
 [workspace.dependencies]
 wf-api = { path = "crates/wf-api" }
