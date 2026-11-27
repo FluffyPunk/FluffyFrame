@@ -126,8 +126,7 @@ Not ported yet:
 - Market Analytics and Missions/Enemies views
 - the custom theme builder and custom CSS
 - dashboard layout editing and pop-out widgets
-- i18n, auto-update, Duviri cycle, Mastery "Planned"/"Codex"/"Incarnon" tabs
-- compact riven cards, and listing a riven on warframe.market from its details
+- auto-update, Duviri cycle, Mastery "Planned"/"Codex"/"Incarnon" tabs
 
 ## Tests
 
