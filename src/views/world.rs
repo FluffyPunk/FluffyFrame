@@ -4,14 +4,14 @@
 use chrono::Utc;
 use egui::{Align, FontId, Layout, Margin, RichText, Ui, vec2};
 use egui_extras::{Column, TableBuilder};
-use fluffyframe_core::services::world_state::WorldState;
+use fluffyframe_core::services::world_state::{Alert, WorldState};
 
 use super::arbi::ArbiView;
 use super::need_game_data;
 use crate::assets;
 use crate::components::{format, ui as kit};
 use crate::ipc::{Backend, DataCmd};
-use crate::stores::AppState;
+use crate::stores::{self, AppState};
 use crate::theme::{self, *};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -20,6 +20,7 @@ enum Tab {
     World,
     Arbitrations,
     Dailies,
+    Bounties,
     Baro,
 }
 
@@ -34,6 +35,7 @@ enum FissureFilter {
 #[derive(Default)]
 pub struct WorldView {
     tab: Tab,
+    bounties: super::bounties::BountiesView,
     fissures: FissureFilter,
     tier: Option<&'static str>,
     baro_search: String,
@@ -74,6 +76,7 @@ impl WorldView {
                 (Tab::World, "World".into()),
                 (Tab::Arbitrations, "Arbitrations".into()),
                 (Tab::Dailies, "Dailies/Weeklies".into()),
+                (Tab::Bounties, "Bounties".into()),
                 (Tab::Baro, "Baro".into()),
             ],
         );
@@ -89,6 +92,7 @@ impl WorldView {
         match self.tab {
             Tab::World => self.world(ui, state, backend, &ws),
             Tab::Dailies => self.dailies_view.ui(ui, state, backend, &ws),
+            Tab::Bounties => self.bounties.ui(ui, state, backend, &ws),
             Tab::Baro => self.baro(ui, state, backend, &ws),
             Tab::Arbitrations => {}
         }
@@ -132,22 +136,49 @@ impl WorldView {
             kit::responsive_columns(ui, 420.0, 2, |ui, col| {
                 if col == 0 {
                 section(ui, "Planet Cycles", |ui| {
-                    let per_row = kit::fit_columns(ui, 260.0, 2);
+                    let (alerts, lead) = {
+                        let s = backend.shared.settings.read().unwrap();
+                        (s.cycle_alerts.clone(), s.cycle_alert_minutes)
+                    };
+                    let mut toggled = None;
+                    let per_row = kit::fit_columns(ui, 300.0, 2);
                     ui.columns(per_row, |c| {
                         for (n, cy) in ws.cycles.iter().enumerate() {
                             let ui = &mut c[n % per_row];
                             kit::split_row(
                                 ui,
                                 |ui| {
-                                    kit::icon(ui, assets::cycle_icon(cy.name), 30.0);
+                                    kit::round_icon(ui, assets::cycle_icon(cy.name), 30.0);
                                     ui.label(RichText::new(cy.name).family(theme::body_strong()));
                                     kit::pill(ui, cy.state, cycle_color(cy.state));
                                 },
                                 |ui| {
+                                    let on = alerts.iter().any(|a| a == cy.name);
+                                    let tip = if on { format!("Stop {} alerts", cy.name) } else { format!("Notify when {} changes", cy.name) };
+                                    if bell_toggle(ui, on).on_hover_text(tip).clicked() {
+                                        toggled = Some(cy.name);
+                                    }
                                     ui.label(RichText::new(format::until(Some(cy.ends_at))).family(theme::body_strong()));
+                                    ui.label(RichText::new(format!("{} in", cy.next)).size(11.5).color(TEXT_MUTED()));
                                 },
                             );
                             ui.add_space(4.0);
+                        }
+                    });
+                    if let Some(name) = toggled {
+                        stores::update_settings(backend, |s| {
+                            if s.cycle_alerts.iter().any(|a| a == name) {
+                                s.cycle_alerts.retain(|a| a != name);
+                            } else {
+                                s.cycle_alerts.push(name.to_string());
+                            }
+                        });
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Notify before cycle change").size(12.0).color(TEXT_SECONDARY()));
+                        let mut minutes = lead;
+                        if ui.add(egui::DragValue::new(&mut minutes).range(0..=120).suffix(" min")).changed() {
+                            stores::update_settings(backend, |s| s.cycle_alert_minutes = minutes);
                         }
                     });
                 });
@@ -288,31 +319,10 @@ impl WorldView {
                 if !ws.alerts.is_empty() {
                     section(ui, "Alerts", |ui| {
                         for a in &ws.alerts {
-                            kit::split_row(
-                                ui,
-                                |ui| {
-                                    ui.label(RichText::new(&a.mission_type).family(theme::body_strong()));
-                                    ui.label(RichText::new(&a.node).color(TEXT_SECONDARY()));
-                                },
-                                |ui| {
-                                    ui.label(format::until(a.expiry));
-                                },
-                            );
-                            ui.label(RichText::new(&a.reward).size(12.0).color(ACCENT()));
+                            alert_row(ui, state, a);
                         }
                     });
                 }
-                section(ui, "Bounties", |ui| {
-                    for b in &ws.bounties {
-                        egui::CollapsingHeader::new(RichText::new(format!("{}  ·  {}", b.syndicate, format::until(b.expiry))).family(theme::body_strong()))
-                            .id_salt(&b.syndicate)
-                            .show(ui, |ui| {
-                                for j in &b.jobs {
-                                    ui.label(RichText::new(j).size(12.5).color(TEXT_SECONDARY()));
-                                }
-                            });
-                    }
-                });
                 }
             });
         });
@@ -417,6 +427,47 @@ impl WorldView {
 }
 
 /// Collapsible titled block (original: `CollapsibleSection.svelte`).
+/// One alert: reward icon, mission, and what it pays.
+fn alert_row(ui: &mut Ui, state: &AppState, a: &Alert) {
+    egui::Frame::new().fill(BG_WELL()).corner_radius(RADIUS_MD()).inner_margin(Margin::same(8)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            let image = a.reward_item.as_deref().and_then(|u| state.db.as_ref()?.image_url(u));
+            kit::remote_image(ui, image.as_deref(), vec2(40.0, 40.0));
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                kit::split_row(
+                    ui,
+                    |ui| {
+                        ui.label(RichText::new(&a.mission_type).family(theme::body_strong()));
+                        ui.label(RichText::new(&a.node).color(TEXT_SECONDARY()));
+                    },
+                    |ui| {
+                        kit::pill(ui, &format::until(a.expiry), TEXT_SECONDARY());
+                    },
+                );
+                kit::split_row(
+                    ui,
+                    |ui| {
+                        if !a.reward.is_empty() {
+                            ui.label(RichText::new(&a.reward).family(theme::body_strong()).color(ACCENT()));
+                        }
+                    },
+                    |ui| {
+                        if a.credits > 0 {
+                            ui.label(RichText::new(format::int(a.credits)).size(12.0).color(TEXT_SECONDARY()));
+                            kit::icon(ui, assets::CREDITS, 14.0);
+                        }
+                        let levels = format!("{} · Lv {}–{}", a.faction, a.min_level, a.max_level);
+                        ui.label(RichText::new(levels).size(12.0).color(TEXT_MUTED()));
+                    },
+                );
+            });
+        });
+    });
+    ui.add_space(4.0);
+}
+
 fn section(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui)) {
     egui::CollapsingHeader::new(RichText::new(title).font(FontId::new(16.0, theme::display_bold())))
         .default_open(true)
@@ -470,10 +521,51 @@ fn image_tile(ui: &mut Ui, state: &AppState, unique: &str, name: &str, highlight
 }
 
 fn cycle_color(state: &str) -> egui::Color32 {
+    use egui::Color32 as C;
     match state {
         "Day" | "Fass" => WARNING(),
-        "Warm" => egui::Color32::from_rgb(0xf9, 0x73, 0x16),
+        "Warm" => C::from_rgb(0xf9, 0x73, 0x16),
         "Night" | "Cold" | "Vome" => INFO(),
+        // Duviri moods (original: `--world-state-*-text`).
+        "Anger" => C::from_rgb(0xef, 0x44, 0x44),
+        "Joy" => C::from_rgb(0xfb, 0xbf, 0x24),
+        "Envy" => C::from_rgb(0x22, 0xc5, 0x5e),
+        "Sorrow" => C::from_rgb(0x60, 0xa5, 0xfa),
+        "Fear" => C::from_rgb(0xa7, 0x8b, 0xfa),
         _ => TEXT_SECONDARY(),
     }
+}
+
+/// Cycle alert toggle: a filled amber bell when on, a faint outline when off
+/// (original: the bell in `CycleRow.svelte`).
+fn bell_toggle(ui: &mut Ui, on: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let p = ui.painter();
+    let color = if on {
+        WARNING()
+    } else if resp.hovered() {
+        TEXT_SECONDARY()
+    } else {
+        alpha(TEXT_MUTED(), 0.55)
+    };
+    let (fill, border) = if on { (alpha(WARNING(), 0.10), alpha(WARNING(), 0.4)) } else { (egui::Color32::TRANSPARENT, alpha(BORDER(), 0.6)) };
+    p.rect(rect, RADIUS_MD(), fill, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+    // Bell: a dome over straight sides, a rim, and the clapper below.
+    let c = rect.center() + vec2(0.0, -1.0);
+    let mut body: Vec<egui::Pos2> = (0..=10)
+        .map(|i| {
+            let a = std::f32::consts::PI * (1.0 + i as f32 / 10.0);
+            c + vec2(3.6 * a.cos(), -1.0 + 3.6 * a.sin())
+        })
+        .collect();
+    body.extend([c + vec2(3.6, 2.6), c + vec2(5.0, 3.6), c + vec2(-5.0, 3.6), c + vec2(-3.6, 2.6)]);
+    if on {
+        p.add(egui::Shape::convex_polygon(body, color, egui::Stroke::NONE));
+        p.circle_filled(c + vec2(0.0, 5.2), 1.4, color);
+    } else {
+        p.add(egui::Shape::closed_line(body, egui::Stroke::new(1.1, color)));
+        p.circle_stroke(c + vec2(0.0, 5.2), 1.3, egui::Stroke::new(1.1, color));
+    }
+    resp
 }

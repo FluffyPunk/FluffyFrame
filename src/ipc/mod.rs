@@ -51,6 +51,8 @@ pub enum Event {
     World(Arc<WorldState>),
     Arbi(Arc<ArbiSchedule>),
     Drops(Arc<DropIndex>),
+    /// Empty when it couldn't be fetched.
+    Bounties(Arc<fluffyframe_core::services::bounty_cycle::BountyBook>),
     /// Community riven good-rolls sheet (attribute grades).
     GoodRolls(Arc<fluffyframe_core::services::riven_good_rolls::GoodRolls>),
     Prices(Vec<(String, Price)>),

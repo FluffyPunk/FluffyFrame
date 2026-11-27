@@ -92,12 +92,22 @@ pub fn pill(ui: &mut Ui, text: &str, color: Color32) -> Response {
 
 /// Gold-outlined toggle chip (original: `.chip` buttons).
 pub fn chip(ui: &mut Ui, selected: bool, text: &str) -> Response {
+    icon_chip(ui, selected, None, text)
+}
+
+/// [`chip`] with a small icon before the text.
+pub fn icon_chip(ui: &mut Ui, selected: bool, icon: Option<ImageSource<'static>>, text: &str) -> Response {
     let (fill, stroke, color) = if selected {
         (alpha(ACCENT(), 0.14), ACCENT(), ACCENT_BRIGHT())
     } else {
         (BG_RAISED(), BORDER_STRONG(), TEXT_SECONDARY())
     };
-    let btn = egui::Button::new(RichText::new(text).size(12.5).color(color))
+    let text = RichText::new(text).size(12.5).color(color);
+    let btn = match icon {
+        Some(icon) => egui::Button::image_and_text(egui::Image::new(icon).fit_to_exact_size(vec2(16.0, 16.0)), text),
+        None => egui::Button::new(text),
+    };
+    let btn = btn
         .fill(fill)
         .stroke(Stroke::new(1.0, stroke))
         .corner_radius(RADIUS_SM())
@@ -139,6 +149,11 @@ pub fn card_title(ui: &mut Ui, text: &str) -> Response {
 
 pub fn icon(ui: &mut Ui, src: ImageSource<'static>, size: f32) -> Response {
     ui.add(egui::Image::new(src).fit_to_exact_size(Vec2::splat(size)))
+}
+
+/// [`icon`] clipped to a circle (square images: planet cycle art).
+pub fn round_icon(ui: &mut Ui, src: ImageSource<'static>, size: f32) -> Response {
+    ui.add(egui::Image::new(src).fit_to_exact_size(Vec2::splat(size)).corner_radius(size / 2.0))
 }
 
 /// Remote image (item art) with a fixed box.

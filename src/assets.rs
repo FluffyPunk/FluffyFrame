@@ -80,6 +80,7 @@ pub fn view_icon(view: ViewName) -> ImageSource<'static> {
 /// Planet art for open-world cycles.
 pub fn cycle_icon(name: &str) -> ImageSource<'static> {
     match name {
+        "Cetus" => include_image!("../assets/world/cetus.webp"),
         "Orb Vallis" => include_image!("../assets/world/vallis.webp"),
         "Cambion Drift" => include_image!("../assets/world/cambion.webp"),
         "Zariman" | "Duviri" => include_image!("../assets/world/zariman.webp"),

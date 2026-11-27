@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use super::{http, json_cache};
-use crate::config::constants::{PEP_REGIONS_TTL, PEP_REGIONS_URL};
+use crate::config::constants::{PEP_BASE, PEP_TTL};
 
 const JUNCTION_MASTERY_XP: u64 = 1000;
 
@@ -32,7 +32,7 @@ fn parse(root: &Value) -> HashMap<String, NodeMastery> {
 
 /// Node tag → mastery; empty when the data can't be loaded (logged).
 pub fn load() -> HashMap<String, NodeMastery> {
-    let text = json_cache::fetch_cached("pep/ExportRegions.json", PEP_REGIONS_TTL, || http::get_text(PEP_REGIONS_URL));
+    let text = json_cache::fetch_cached("pep/ExportRegions.json", PEP_TTL, || http::get_text(&format!("{PEP_BASE}ExportRegions.json")));
     match text.and_then(|t| Ok(serde_json::from_str::<Value>(&t)?)) {
         Ok(root) => parse(&root),
         Err(e) => {

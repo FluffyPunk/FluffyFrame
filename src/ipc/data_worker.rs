@@ -11,6 +11,7 @@ use fluffyframe_core::config::constants::WORLD_STATE_REFRESH;
 use fluffyframe_core::services::arbi_schedule::ArbiSchedule;
 use fluffyframe_core::services::item_database::ItemDb;
 use fluffyframe_core::services::world_state::{self, WorldState};
+use fluffyframe_core::services::bounty_cycle::{self, BountyBook};
 use fluffyframe_core::services::{drop_data, market_blueprints, notifications, region_mastery, public_export, riven_good_rolls, wfm_catalog};
 
 use super::{Emitter, Event, Shared, ToastKind};
@@ -18,8 +19,13 @@ use super::{Emitter, Event, Shared, ToastKind};
 pub enum DataCmd {
     RefreshWorld,
     LoadDrops,
+    /// Seeded bounties and bounty text (see `bounty_cycle`).
+    LoadBounties,
     ReloadGameData,
 }
+
+/// How often planet-cycle alerts are checked.
+const CYCLE_CHECK: Duration = Duration::from_secs(10);
 
 /// How long before a favorite arbitration starts to notify.
 const ARBI_LEAD: chrono::Duration = chrono::Duration::minutes(5);
@@ -84,6 +90,12 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<DataCmd>) {
 
     let mut notified_arbi: HashSet<i64> = HashSet::new();
     let mut seen_fissures: Option<HashSet<String>> = None;
+    let mut cycle_watch = notifications::CycleWatch::default();
+    // Cycles are clock math: checked often, so alerts and bell toggles take
+    // effect within seconds, not at the next world fetch. Cetus (and the Cambion
+    // Drift) also need the Ostron bounty expiry from the last fetch.
+    let mut cetus_expiry = None;
+    let mut next_cycles = Instant::now();
     let mut next_world = Instant::now();
     loop {
         if Instant::now() >= next_world {
@@ -92,6 +104,7 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<DataCmd>) {
                     Ok(raw) => {
                         let ws = world_state::parse(&raw, db);
                         notify_fissures(&shared, &ws, &mut seen_fissures);
+                        cetus_expiry = ws.bounties.iter().find(|b| b.tag == "CetusSyndicate").and_then(|b| b.expiry).or(cetus_expiry);
                         emitter.emit(Event::World(Arc::new(ws)));
                     }
                     Err(e) => log::warn!("world state: {e:#}"),
@@ -102,7 +115,11 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<DataCmd>) {
             }
             next_world = Instant::now() + WORLD_STATE_REFRESH;
         }
-        let wait = next_world.saturating_duration_since(Instant::now()).max(Duration::from_millis(50));
+        if Instant::now() >= next_cycles {
+            notify_cycles(&shared, &mut cycle_watch, &world_state::cycles(Utc::now(), cetus_expiry));
+            next_cycles = Instant::now() + CYCLE_CHECK;
+        }
+        let wait = next_world.min(next_cycles).saturating_duration_since(Instant::now()).max(Duration::from_millis(50));
         match rx.recv_timeout(wait) {
             Ok(DataCmd::RefreshWorld) => next_world = Instant::now(),
             Ok(DataCmd::ReloadGameData) => {
@@ -118,6 +135,13 @@ pub fn run(shared: Arc<Shared>, emitter: Emitter, rx: Receiver<DataCmd>) {
                 }
                 emitter.emit(Event::Loading(None));
             }
+            Ok(DataCmd::LoadBounties) => match bounty_cycle::load() {
+                Ok(b) => emitter.emit(Event::Bounties(Arc::new(b))),
+                Err(e) => {
+                    log::warn!("bounty cycle: {e:#}");
+                    emitter.emit(Event::Bounties(Arc::new(BountyBook::default())));
+                }
+            },
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
@@ -139,6 +163,16 @@ fn notify_arbitration(shared: &Shared, arbi: &ArbiSchedule, db: &ItemDb, notifie
             "Favorite arbitration",
             &format!("{} {} starts at {}", db.node_label(&slot.node_id), mission, slot.start.with_timezone(&chrono::Local).format("%H:%M")),
         );
+    }
+}
+
+fn notify_cycles(shared: &Shared, watch: &mut notifications::CycleWatch, cycles: &[world_state::Cycle]) {
+    let (enabled, lead) = {
+        let s = shared.settings.read().unwrap();
+        (s.cycle_alerts.clone(), chrono::Duration::minutes(s.cycle_alert_minutes.into()))
+    };
+    for (title, body) in watch.check(cycles, &enabled, lead, Utc::now()) {
+        notifications::send(&title, &body);
     }
 }
 

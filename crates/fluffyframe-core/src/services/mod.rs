@@ -39,6 +39,7 @@ pub mod wfm_stats_price;
 
 // World
 pub mod arbi_schedule;
+pub mod bounty_cycle;
 pub mod world_state;
 
 // EE.log and trackers

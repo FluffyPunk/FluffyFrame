@@ -48,6 +48,9 @@ pub struct AppState {
     pub arbi: Option<Arc<ArbiSchedule>>,
     pub drops: Option<Arc<DropIndex>>,
     pub drops_requested: bool,
+    pub bounties: Option<Arc<fluffyframe_core::services::bounty_cycle::BountyBook>>,
+    /// A bounty load is in flight.
+    pub bounties_requested: bool,
     /// Relic families absent from the live drop tables; `None` until drops load.
     pub vaulted_relics: Option<HashSet<String>>,
     pub helper: HelperStatus,
@@ -146,6 +149,10 @@ impl AppState {
                 self.drops_requested = true;
                 self.recompute_vaulted();
                 self.rebuild_rows(backend);
+            }
+            Event::Bounties(b) => {
+                self.bounties = Some(b);
+                self.bounties_requested = false;
             }
             Event::Prices(list) => self.prices.extend(list),
             Event::PriceQueue(n) => self.price_queue = n,

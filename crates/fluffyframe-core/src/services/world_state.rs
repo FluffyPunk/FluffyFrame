@@ -89,16 +89,38 @@ pub struct Invasion {
 
 #[derive(Debug, Clone)]
 pub struct Bounty {
+    /// World state tag (`CetusSyndicate`).
+    pub tag: String,
     pub syndicate: String,
     pub expiry: Option<DateTime<Utc>>,
-    pub jobs: Vec<String>,
+    pub jobs: Vec<BountyJob>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BountyJob {
+    /// `jobType`, for its in-game name (see `bounty_cycle`); empty for vaults.
+    pub job_type: String,
+    pub name: String,
+    pub min_level: u32,
+    pub max_level: u32,
+    pub mastery_req: u32,
+    /// Reward rotation (`A`/`B`/`C`) from the job's reward table.
+    pub rotation: Option<char>,
+    /// Deimos Isolation Vault.
+    pub vault: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Alert {
     pub node: String,
     pub mission_type: String,
+    pub faction: String,
+    pub min_level: u32,
+    pub max_level: u32,
     pub reward: String,
+    /// The first reward item, for its icon.
+    pub reward_item: Option<String>,
+    pub credits: u64,
     pub expiry: Option<DateTime<Utc>>,
 }
 
@@ -190,6 +212,8 @@ pub fn archon_shard(boss: &str) -> &'static str {
 pub struct Cycle {
     pub name: &'static str,
     pub state: &'static str,
+    /// The state that follows at `ends_at`.
+    pub next: &'static str,
     pub ends_at: DateTime<Utc>,
 }
 
@@ -257,6 +281,16 @@ fn prettify_challenge(path: &str) -> (String, &'static str, u32) {
 }
 
 fn reward_label(reward: &Value, db: &ItemDb) -> String {
+    let mut parts = vec![items_label(reward, db)];
+    if let Some(cr) = reward.get("credits").and_then(Value::as_u64).filter(|c| *c > 0) {
+        parts.push(format!("{cr} cr"));
+    }
+    parts.retain(|p| !p.is_empty());
+    parts.join(", ")
+}
+
+/// A reward's items, without its credits.
+fn items_label(reward: &Value, db: &ItemDb) -> String {
     let mut parts = Vec::new();
     for c in arr(reward, "countedItems") {
         let name = db.name(s(c, "ItemType"));
@@ -268,10 +302,14 @@ fn reward_label(reward: &Value, db: &ItemDb) -> String {
             parts.push(db.name(&store_item_path(path)));
         }
     }
-    if let Some(cr) = reward.get("credits").and_then(Value::as_u64).filter(|c| *c > 0) {
-        parts.push(format!("{cr} cr"));
-    }
     parts.join(", ")
+}
+
+/// Rotation letter from a bounty reward table (`…/TierCTableBRewards` → `B`).
+fn reward_rotation(path: &str) -> Option<char> {
+    let name = path.rsplit('/').next()?.strip_suffix("Rewards")?;
+    let i = name.rfind("Table")?;
+    name[i + 5..].chars().next().filter(|c| matches!(c, 'A'..='C'))
 }
 
 /// Open-world day/night cycles (original: `src/lib/world/*` cycle math).
@@ -280,8 +318,11 @@ pub fn cycles(now: DateTime<Utc>, cetus_expiry: Option<DateTime<Utc>>) -> Vec<Cy
     // Earth: 4h day, 4h night.
     let secs = now.timestamp();
     let into = secs.rem_euclid(28_800);
-    let (state, left) = if into < 14_400 { ("Day", 14_400 - into) } else { ("Night", 28_800 - into) };
-    out.push(Cycle { name: "Earth", state, ends_at: now + Duration::seconds(left) });
+    // End times come from the cycle boundaries, not `now` + time left: `now`
+    // carries sub-second precision, and a moving end would repeat alerts.
+    let (state, next, left) = if into < 14_400 { ("Day", "Night", 14_400 - into) } else { ("Night", "Day", 28_800 - into) };
+    let ends_at = Utc.timestamp_opt(secs + left, 0).single().unwrap_or(now);
+    out.push(Cycle { name: "Earth", state, next, ends_at });
 
     // Cetus: 150 min cycle ending at the Ostron bounty expiry, last 50 min are night.
     if let Some(mut end) = cetus_expiry {
@@ -289,21 +330,31 @@ pub fn cycles(now: DateTime<Utc>, cetus_expiry: Option<DateTime<Utc>>) -> Vec<Cy
             end += Duration::minutes(150);
         }
         let night_start = end - Duration::minutes(50);
-        let (state, ends_at) = if now < night_start { ("Day", night_start) } else { ("Night", end) };
-        out.push(Cycle { name: "Cetus", state, ends_at });
+        let day = now < night_start;
+        let (state, next, ends_at) = if day { ("Day", "Night", night_start) } else { ("Night", "Day", end) };
+        out.push(Cycle { name: "Cetus", state, next, ends_at });
         // The Cambion Drift follows Cetus: day is Fass, night is Vome.
-        out.push(Cycle {
-            name: "Cambion Drift",
-            state: if state == "Day" { "Fass" } else { "Vome" },
-            ends_at,
-        });
+        let (state, next) = if day { ("Fass", "Vome") } else { ("Vome", "Fass") };
+        out.push(Cycle { name: "Cambion Drift", state, next, ends_at });
     }
 
     // Orb Vallis: 1600 s loop, 400 s warm.
     let ms = now.timestamp_millis();
     let since = (ms - 1_541_837_628_000).rem_euclid(1_600_000);
-    let (state, left_ms) = if since < 400_000 { ("Warm", 400_000 - since) } else { ("Cold", 1_600_000 - since) };
-    out.push(Cycle { name: "Orb Vallis", state, ends_at: now + Duration::milliseconds(left_ms) });
+    let (state, next, left_ms) = if since < 400_000 { ("Warm", "Cold", 400_000 - since) } else { ("Cold", "Warm", 1_600_000 - since) };
+    let ends_at = Utc.timestamp_millis_opt(ms + left_ms).single().unwrap_or(now);
+    out.push(Cycle { name: "Orb Vallis", state, next, ends_at });
+
+    // Duviri: five moods of two hours each, in order, counted from the epoch.
+    const MOODS: [&str; 5] = ["Sorrow", "Fear", "Joy", "Anger", "Envy"];
+    const MOOD_MS: i64 = 7_200_000;
+    let i = ms.div_euclid(MOOD_MS);
+    out.push(Cycle {
+        name: "Duviri",
+        state: MOODS[i.rem_euclid(5) as usize],
+        next: MOODS[(i + 1).rem_euclid(5) as usize],
+        ends_at: Utc.timestamp_millis_opt((i + 1) * MOOD_MS).single().unwrap_or(now),
+    });
     out
 }
 
@@ -436,16 +487,24 @@ pub fn parse(raw: &Value, db: &ItemDb) -> WorldState {
         if jobs.is_empty() {
             continue;
         }
+        let num = |j: &Value, k: &str| j.get(k).and_then(Value::as_u64).unwrap_or(0) as u32;
         ws.bounties.push(Bounty {
+            tag: tag.to_string(),
             syndicate: game_tables::syndicate_label(tag),
             expiry: date(m, "Expiry"),
             jobs: jobs
                 .iter()
                 .map(|j| {
-                    let job = fallback_name(s(j, "jobType"));
-                    let lo = j.get("minEnemyLevel").and_then(Value::as_u64).unwrap_or(0);
-                    let hi = j.get("maxEnemyLevel").and_then(Value::as_u64).unwrap_or(0);
-                    format!("{job} (Lv {lo}-{hi})")
+                    let vault = j.get("isVault").and_then(Value::as_bool).unwrap_or(false);
+                    BountyJob {
+                        job_type: s(j, "jobType").to_string(),
+                        name: if vault { "Isolation Vault".into() } else { fallback_name(s(j, "jobType")) },
+                        min_level: num(j, "minEnemyLevel"),
+                        max_level: num(j, "maxEnemyLevel"),
+                        mastery_req: num(j, "masteryReq"),
+                        rotation: reward_rotation(s(j, "rewards")),
+                        vault,
+                    }
                 })
                 .collect(),
         });
@@ -457,10 +516,21 @@ pub fn parse(raw: &Value, db: &ItemDb) -> WorldState {
             continue;
         }
         let info = a.get("MissionInfo").unwrap_or(&Value::Null);
+        let reward = info.get("missionReward").unwrap_or(&Value::Null);
+        let item = arr(reward, "countedItems")
+            .first()
+            .map(|c| s(c, "ItemType").to_string())
+            .or_else(|| arr(reward, "items").first().and_then(Value::as_str).map(store_item_path));
+        let num = |k: &str| info.get(k).and_then(Value::as_u64).unwrap_or(0) as u32;
         ws.alerts.push(Alert {
             node: db.node_label(s(info, "location")),
             mission_type: game_tables::mission_type_label(s(info, "missionType")),
-            reward: info.get("missionReward").map(|r| reward_label(r, db)).unwrap_or_default(),
+            faction: game_tables::faction_label(s(info, "faction")),
+            min_level: num("minEnemyLevel"),
+            max_level: num("maxEnemyLevel"),
+            reward: items_label(reward, db),
+            reward_item: item,
+            credits: reward.get("credits").and_then(Value::as_u64).unwrap_or(0),
             expiry,
         });
     }
@@ -513,6 +583,37 @@ pub fn parse(raw: &Value, db: &ItemDb) -> WorldState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cycle_ends_are_stable() {
+        // Two checks a minute apart (with sub-second noise) see the same end times.
+        let t = Utc.with_ymd_and_hms(2026, 11, 27, 0, 33, 0).unwrap() + Duration::nanoseconds(123_456_789);
+        let a = cycles(t, None);
+        let b = cycles(t + Duration::seconds(61) + Duration::nanoseconds(7), None);
+        for (a, b) in a.iter().zip(&b) {
+            assert_eq!((a.name, a.ends_at), (b.name, b.ends_at));
+        }
+    }
+
+    #[test]
+    fn duviri_moods_follow_the_clock() {
+        // 2026-11-27 00:00 UTC was the start of an Anger mood (checked against warframestat).
+        let t = Utc.with_ymd_and_hms(2026, 11, 27, 1, 0, 0).unwrap();
+        let duviri = |t| cycles(t, None).into_iter().find(|c| c.name == "Duviri").unwrap();
+        let c = duviri(t);
+        assert_eq!((c.state, c.next, c.ends_at), ("Anger", "Envy", Utc.with_ymd_and_hms(2026, 11, 27, 2, 0, 0).unwrap()));
+        assert_eq!(duviri(t + Duration::hours(2)).state, "Envy");
+        assert_eq!(duviri(t + Duration::hours(4)).state, "Sorrow");
+    }
+
+    #[test]
+    fn bounty_rotation_from_reward_table() {
+        let r = reward_rotation;
+        assert_eq!(r("/Lotus/Types/Game/MissionDecks/EidolonJobMissionRewards/TierATableCRewards"), Some('C'));
+        assert_eq!(r("/Lotus/Types/Game/MissionDecks/DeimosMissionRewards/VaultBountyTierBTableBRewards"), Some('B'));
+        assert_eq!(r("/Lotus/Types/Game/MissionDecks/EidolonJobMissionRewards/NarmerTableCRewards"), Some('C'));
+        assert_eq!(r(""), None);
+    }
 
     #[test]
     fn cycles_are_in_future() {

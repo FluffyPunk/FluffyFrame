@@ -75,6 +75,10 @@ pub struct Settings {
     pub notify_fissures: bool,
     /// Arbitration nodes (`SolNode…`) that raise a notification when scheduled.
     pub arbi_favorites: Vec<String>,
+    /// Planet cycles ("Earth", "Duviri", …) that notify when they change.
+    pub cycle_alerts: Vec<String>,
+    /// Also notify this many minutes before an alerted cycle changes (0: only on the change).
+    pub cycle_alert_minutes: u32,
     /// Fissure rules: mission type labels that notify (Steel Path filter below).
     pub fissure_alert_missions: Vec<String>,
     pub fissure_alert_steel_path: bool,
@@ -107,6 +111,8 @@ impl Default for Settings {
             notify_arbitrations: true,
             notify_fissures: false,
             arbi_favorites: Vec::new(),
+            cycle_alerts: Vec::new(),
+            cycle_alert_minutes: 3,
             fissure_alert_missions: Vec::new(),
             fissure_alert_steel_path: false,
             value_scope: ValueScope::PrimePartsOnly,

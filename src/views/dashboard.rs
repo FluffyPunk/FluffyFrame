@@ -67,12 +67,12 @@ impl DashboardView {
             widget(ui, assets::view_icon(ViewName::World), "Planet Cycles", Some((go, ViewName::World)), |ui| {
                 for c in &ws.cycles {
                     ui.horizontal(|ui| {
-                        kit::icon(ui, assets::cycle_icon(c.name), 32.0);
+                        kit::round_icon(ui, assets::cycle_icon(c.name), 32.0);
                         ui.label(RichText::new(c.name).family(theme::body_strong()).size(15.0));
                         ui.label(RichText::new(c.state).size(12.0).color(TEXT_SECONDARY()));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.label(RichText::new(format::until(Some(c.ends_at))).family(theme::body_strong()));
-                            ui.label(RichText::new(format!("{} in", next_state(c.name, c.state))).size(11.5).color(TEXT_MUTED()));
+                            ui.label(RichText::new(format!("{} in", c.next)).size(11.5).color(TEXT_MUTED()));
                         });
                     });
                     row_line(ui);
@@ -239,16 +239,4 @@ fn currency(ui: &mut Ui, icon: egui::ImageSource<'static>, label: &str, value: S
             ui.label(RichText::new(value).size(17.0).family(theme::body_strong()));
         });
     });
-}
-
-fn next_state(name: &str, state: &str) -> &'static str {
-    match (name, state) {
-        (_, "Day") => "Night",
-        (_, "Night") => "Day",
-        (_, "Warm") => "Cold",
-        (_, "Cold") => "Warm",
-        (_, "Fass") => "Vome",
-        (_, "Vome") => "Fass",
-        _ => "Next",
-    }
 }

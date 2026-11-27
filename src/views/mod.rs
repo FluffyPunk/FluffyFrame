@@ -4,6 +4,7 @@
 //! summary (excluded by request), plus Market Analytics and Missions/Enemies.
 
 pub mod arbi;
+mod bounties;
 mod dailies;
 mod dashboard;
 mod foundry;
