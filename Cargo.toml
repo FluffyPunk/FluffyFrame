@@ -39,6 +39,13 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 rfd = "0.18.0"
 anyhow = "1.0.105"
 egui = "0.37.0"
+# The "check riven" hotkey: a system hotkey on Windows, X11 and macOS…
+global-hotkey = "0.7.0"
+
+# …and the desktop portal's global shortcuts on Wayland.
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.14.3", default-features = false, features = ["global_shortcuts", "async-io"] }
+futures-util = { version = "0.3", default-features = false }
 
 [profile.release]
 opt-level = 3

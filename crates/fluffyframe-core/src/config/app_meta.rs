@@ -2,6 +2,10 @@
 
 pub const APP_NAME: &str = "FluffyFrame";
 pub const APP_ID: &str = "fluffyframe";
+/// The app's id with the desktop portals (reverse DNS of fluffypunk.fyi):
+/// global shortcuts are listed under it (`fyi.fluffypunk.fluffyframe:check-riven`).
+/// Desktops keep their bindings under it, so it must not change.
+pub const PORTAL_APP_ID: &str = "fyi.fluffypunk.fluffyframe";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const REPO_URL: &str = "https://github.com/FluffyPunk/FluffyFrame";
 /// WFHelper, the Electron app FluffyFrame is a port of.

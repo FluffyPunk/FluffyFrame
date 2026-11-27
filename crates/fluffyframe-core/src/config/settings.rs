@@ -67,6 +67,9 @@ pub struct Settings {
     pub inventory_rows: bool,
     /// Unveiled rivens as small cards instead of the riven card art.
     pub riven_compact: bool,
+    /// The "check riven" hotkey ("Ctrl+Alt+R"). On Wayland the desktop owns
+    /// the key: this is only the one asked for.
+    pub riven_hotkey: String,
     /// Dailies/weeklies checklist: task id → reset timestamp it was ticked in.
     pub checklist: std::collections::BTreeMap<String, i64>,
     pub ui_scale: f32,
@@ -114,6 +117,7 @@ impl Default for Settings {
             language: "en".into(),
             inventory_rows: false,
             riven_compact: false,
+            riven_hotkey: "Ctrl+Alt+R".into(),
             checklist: Default::default(),
             ui_scale: 1.0,
             landing_view: "inventory".into(),

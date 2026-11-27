@@ -181,7 +181,19 @@ impl AppState {
                 | LogEvent::TradeCompleted(_)
                 | LogEvent::InventorySynced
                 | LogEvent::PurchaseCompleted
+                | LogEvent::RivenCycled
                 | LogEvent::PlayerName(_) => {}
+                // The roll was chosen: nothing is pending any more. The read
+                // that follows brings the riven as kept.
+                LogEvent::RivenChosen => {
+                    if let Some(inv) = &self.inventory
+                        && inv.rivens.iter().any(|r| r.pending.is_some())
+                    {
+                        let mut inv = (**inv).clone();
+                        inv.rivens.iter_mut().for_each(|r| r.pending = None);
+                        self.inventory = Some(Arc::new(inv));
+                    }
+                }
             },
             Event::Trade(t) => {
                 self.push_history(crate::i18n::trf("Trade with {}: {}p", &[&t.trade.partner, &t.trade.platinum]));

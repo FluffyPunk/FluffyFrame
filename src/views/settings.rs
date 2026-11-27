@@ -1,5 +1,5 @@
 //! Settings (original: `src/views/SettingsView.svelte`, `src/components/settings/*`).
-//! Overlay, OCR and hotkey settings are gone along with those features.
+//! Overlay and OCR settings are gone along with those features.
 
 use egui::{Align, FontId, Layout, RichText, Ui};
 use fluffyframe_core::config::{app_meta, constants, paths};
@@ -28,6 +28,8 @@ pub struct SettingsView {
     tab: Tab,
     ee_log_edit: Option<String>,
     fissure_mission: String,
+    /// The riven hotkey button waits for the new key.
+    recording_hotkey: bool,
 }
 
 /// Page width cap (original: `max-w-[1320px]`, centered).
@@ -140,6 +142,9 @@ impl SettingsView {
         }
         let source_changed = s.inventory_source != before.inventory_source;
         let log_changed = s.ee_log_path != before.ee_log_path;
+        if s.riven_hotkey != before.riven_hotkey {
+            backend.hotkey.set(&s.riven_hotkey);
+        }
         if serde_json::to_string(&s).ok() != serde_json::to_string(&before).ok() {
             stores::update_settings(backend, |cur| *cur = s);
         }
@@ -194,6 +199,7 @@ impl SettingsView {
                 s.setup_complete = false;
             }
         });
+        self.riven_hotkey(m, backend, s);
         m.panel(tr("Startup"), |ui| {
             row(ui, tr("Open on"), |ui| {
                 egui::ComboBox::from_id_salt("landing")
@@ -205,6 +211,78 @@ impl SettingsView {
                         }
                     });
             });
+        });
+    }
+
+    fn riven_hotkey(&mut self, m: &mut Masonry, backend: &Backend, s: &mut Settings) {
+        use crate::hotkey::{self, Status};
+        m.panel(tr("Riven hotkey"), |ui| {
+            let note = |ui: &mut Ui, text: &str| {
+                ui.label(RichText::new(text).size(11.5).color(TEXT_MUTED()));
+            };
+            note(ui, tr("Press it on the riven cycle screen to read the new roll at once, instead of waiting ~10 s for the game log."));
+            ui.add_space(4.0);
+            let status = backend.hotkey.status();
+            if backend.hotkey.desktop_owned() {
+                row(ui, tr("Key"), |ui| match &status {
+                    Status::Portal(key) if !key.is_empty() => {
+                        ui.label(RichText::new(key).strong());
+                    }
+                    Status::Starting => {
+                        ui.spinner();
+                    }
+                    // Hyprland doesn't tell the portal: look in its binds.
+                    _ => match backend.hotkey.desktop_key() {
+                        Some(key) => {
+                            ui.label(RichText::new(key).strong());
+                        }
+                        None => {
+                            ui.label(RichText::new(tr("Set in your desktop")).color(TEXT_SECONDARY()));
+                        }
+                    },
+                });
+                #[cfg(target_os = "linux")]
+                {
+                    row(ui, tr("Shortcut"), |ui| {
+                        ui.add(egui::Label::new(RichText::new(crate::hotkey::portal_shortcut()).monospace().size(11.5)).selectable(true));
+                    });
+                    note(ui, tr("Your desktop owns this key: change it in its keyboard shortcut settings."));
+                    note(ui, &trf(tr("On Hyprland, bind the shortcut above in its config, e.g. `{}`"), &[&hyprland_bind(&s.riven_hotkey)]));
+                }
+                return;
+            }
+            row(ui, tr("Key"), |ui| {
+                if kit::ghost_button(ui, tr("Reset")).clicked() {
+                    s.riven_hotkey = Settings::default().riven_hotkey;
+                    self.recording_hotkey = false;
+                }
+                let label = if self.recording_hotkey { tr("Press a key…") } else { s.riven_hotkey.as_str() };
+                if kit::ghost_button(ui, label).clicked() {
+                    self.recording_hotkey = !self.recording_hotkey;
+                }
+            });
+            if self.recording_hotkey {
+                let pressed = ui.input(|i| {
+                    i.events.iter().find_map(|e| match e {
+                        egui::Event::Key { key, pressed: true, modifiers, .. } => Some((*key, *modifiers)),
+                        _ => None,
+                    })
+                });
+                match pressed {
+                    Some((egui::Key::Escape, _)) => self.recording_hotkey = false,
+                    Some((key, modifiers)) => match hotkey::combo_of(modifiers, key) {
+                        Some(combo) => {
+                            s.riven_hotkey = combo;
+                            self.recording_hotkey = false;
+                        }
+                        None => note(ui, tr("That key can't be a global hotkey.")),
+                    },
+                    None => note(ui, tr("Hold the modifiers and press the key; Esc cancels.")),
+                }
+            }
+            if let Status::Failed(e) = &status {
+                ui.label(RichText::new(trf(tr("Couldn't register this key: {}"), &[e])).size(12.0).color(WARNING()));
+            }
         });
     }
 
@@ -396,4 +474,15 @@ impl SettingsView {
             ui.label(RichText::new(tr("Not affiliated with Digital Extremes.")).size(11.5).color(TEXT_MUTED()));
         });
     }
+}
+
+/// A `hyprland.conf` line binding the riven hotkey's portal shortcut to
+/// `combo` ("Ctrl+Alt+R" →
+/// "bind = CTRL ALT, R, global, fyi.fluffypunk.fluffyframe:check-riven").
+#[cfg(target_os = "linux")]
+fn hyprland_bind(combo: &str) -> String {
+    let mut parts: Vec<String> = combo.split('+').map(|p| p.trim().to_uppercase()).collect();
+    let key = parts.pop().unwrap_or_default();
+    let mods: Vec<&str> = parts.iter().map(|m| if m == "CTRL" || m == "CONTROL" { "CTRL" } else { m.as_str() }).collect();
+    format!("bind = {}, {key}, global, {}", mods.join(" "), crate::hotkey::portal_shortcut())
 }

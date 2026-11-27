@@ -109,6 +109,7 @@ pub struct Backend {
     market: Sender<MarketCmd>,
     log: Sender<LogCmd>,
     presence: Sender<PresenceCmd>,
+    pub hotkey: crate::hotkey::Hotkey,
 }
 
 impl Backend {
@@ -155,7 +156,15 @@ impl Backend {
             move || presence_worker::run(s, e, presence_rx)
         });
 
-        Self { shared, events, data, inventory, prices, market, log, presence }
+        let combo = shared.settings.read().unwrap().riven_hotkey.clone();
+        let hotkey = crate::hotkey::Hotkey::start(&combo, {
+            let inventory = inventory.clone();
+            move || {
+                let _ = inventory.send(InventoryCmd::CheckRiven);
+            }
+        });
+
+        Self { shared, events, data, inventory, prices, market, log, presence, hotkey }
     }
 
     pub fn data(&self, cmd: DataCmd) {

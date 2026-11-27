@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use wf_api::ApiError;
+use wf_api::{ApiError, Authz};
 
 use super::inventory::Inventory;
 use super::inventory_import;
@@ -82,8 +82,32 @@ pub struct HelperStatus {
 pub fn run_once(logged_in: bool) -> Result<Inventory, (RunFailure, String)> {
     let started = Instant::now();
     let text = wf_api::fetch_inventory().map_err(|e| (RunFailure::from_error(&e, logged_in), e.to_string()))?;
-    let mut inv = Inventory::parse_text(&text).map_err(|e| (RunFailure::InvalidResponse, e.to_string()))?;
-    if let Err(e) = inventory_import::save_snapshot(&text, InventorySource::Game) {
+    finish(&text, started)
+}
+
+/// A read reusing the auth string an earlier one found (`authz`): scanning
+/// the game's memory is most of a read, the download alone is quick. A stale
+/// string (the game logged in again) fails the download or isn't answered
+/// with an inventory; the memory is then scanned again and `authz` updated.
+pub fn run_reusing(authz: &mut Option<Authz>, logged_in: bool) -> Result<Inventory, (RunFailure, String)> {
+    let started = Instant::now();
+    if let Some(known) = authz.as_ref()
+        && let Ok(text) = wf_api::download_inventory(known)
+        && let Ok(inv) = finish(&text, started)
+    {
+        return Ok(inv);
+    }
+    let err = |e: ApiError| (RunFailure::from_error(&e, logged_in), e.to_string());
+    let found = wf_api::find_authz(&mut wf_api::open_game().map_err(err)?).map_err(err)?;
+    let text = wf_api::download_inventory(&found).map_err(err)?;
+    *authz = Some(found);
+    finish(&text, started)
+}
+
+/// Parses a downloaded inventory and persists the snapshot.
+fn finish(text: &str, started: Instant) -> Result<Inventory, (RunFailure, String)> {
+    let mut inv = Inventory::parse_text(text).map_err(|e| (RunFailure::InvalidResponse, e.to_string()))?;
+    if let Err(e) = inventory_import::save_snapshot(text, InventorySource::Game) {
         log::warn!("could not save inventory snapshot: {e}");
     }
     inv.source = Some(InventorySource::Game);

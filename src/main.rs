@@ -13,6 +13,7 @@ mod app;
 mod assets;
 mod components;
 mod console;
+mod hotkey;
 mod core_text;
 mod i18n;
 mod image_loader;

@@ -91,6 +91,12 @@ fn handle(shared: &Shared, emitter: &Emitter, inventory: &Sender<InventoryCmd>, 
         LogEvent::PurchaseCompleted => {
             let _ = inventory.send(InventoryCmd::GameChanged("purchase"));
         }
+        LogEvent::RivenCycled => {
+            let _ = inventory.send(InventoryCmd::RivenCycleSent { pending: true });
+        }
+        LogEvent::RivenChosen => {
+            let _ = inventory.send(InventoryCmd::RivenCycleSent { pending: false });
+        }
         LogEvent::Attached(_) => {}
     }
 }
