@@ -321,6 +321,11 @@ impl SettingsView {
                 });
             });
             ui.label(RichText::new("How the inventory grid shows items.").size(11.5).color(TEXT_MUTED()));
+            row(ui, "Riven cards", |ui| {
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    kit::segmented(ui, &mut s.riven_compact, &[(false, "Full"), (true, "Compact")]);
+                });
+            });
         });
         m.panel("App size", |ui| {
             ui.label("Interface scale");

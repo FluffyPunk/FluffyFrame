@@ -235,19 +235,29 @@ impl RivensView {
             kit::empty(ui, "No rivens", "No unveiled rivens match these filters.");
         }
         let mut clicked: Option<usize> = None;
-        kit::grid_sections(
-            ui,
-            vec![
-                kit::GridSection::new(240.0, 0.0, list.len(), |ui, i| {
-                    let (index, (riven, d)) = list[i];
-                    if riven_card(ui, riven, d) {
-                        clicked = Some(index);
-                    }
-                })
-                .aspect(CARD_RATIO, CARD_MAX_W)
-                .gap(20.0),
-            ],
-        );
+        let compact = backend.shared.settings.read().unwrap().riven_compact;
+        let db = state.db.clone();
+        let section = if compact {
+            kit::GridSection::new(180.0, 0.0, list.len(), |ui, i| {
+                let (index, (riven, d)) = list[i];
+                let image = riven.weapon.as_deref().and_then(|w| db.as_ref()?.image_url(w));
+                if compact_card(ui, riven, d, image.as_deref()) {
+                    clicked = Some(index);
+                }
+            })
+            .heights(|i| compact_height(list[i].1.1.stats.len()))
+            .gap(12.0)
+        } else {
+            kit::GridSection::new(240.0, 0.0, list.len(), |ui, i| {
+                let (index, (riven, d)) = list[i];
+                if riven_card(ui, riven, d) {
+                    clicked = Some(index);
+                }
+            })
+            .aspect(CARD_RATIO, CARD_MAX_W)
+            .gap(20.0)
+        };
+        kit::grid_sections(ui, vec![section]);
         if let Some(i) = clicked {
             self.open = Some(i);
             self.show_all_listings = false;
@@ -663,19 +673,93 @@ fn riven_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven) -> bool {
     }
 
     // Copy chat tag, top left (above the card so it takes the click).
-    let copy = Rect::from_min_size(at(0.13, 0.09), vec2(30.0 * s, 30.0 * s));
-    let copy_resp = ui.interact(copy, card_id.with("copy"), Sense::click());
-    let fill = if copy_resp.hovered() { BG_RAISED() } else { alpha(BG_DEEP(), 0.85) };
-    ui.painter().rect(copy, 4.0, fill, Stroke::new(1.0, BORDER()), egui::StrokeKind::Inside);
-    let glyph = if copy_resp.hovered() { TEXT() } else { TEXT_SECONDARY() };
-    let g = copy.shrink(8.0 * s);
-    ui.painter().rect_stroke(Rect::from_min_max(g.min + vec2(g.width() * 0.35, g.height() * 0.35), g.max), 2.0, Stroke::new(1.5, glyph), egui::StrokeKind::Inside);
-    ui.painter().rect_stroke(Rect::from_min_max(g.min, g.max - vec2(g.width() * 0.35, g.height() * 0.35)), 2.0, Stroke::new(1.5, glyph), egui::StrokeKind::Inside);
+    copy_tag_button(ui, Rect::from_min_size(at(0.13, 0.09), vec2(30.0 * s, 30.0 * s)), card_id.with("copy"), d);
+
+    resp.on_hover_text("Open riven details").clicked()
+}
+
+/// Copies the riven's chat tag ("[Soma Crita-visicron]"): two overlapping
+/// squares in a small button.
+fn copy_tag_button(ui: &Ui, rect: Rect, id: egui::Id, d: &DecodedRiven) {
+    let resp = ui.interact(rect, id, Sense::click());
+    let fill = if resp.hovered() { BG_RAISED() } else { alpha(BG_DEEP(), 0.85) };
+    ui.painter().rect(rect, 4.0, fill, Stroke::new(1.0, BORDER()), egui::StrokeKind::Inside);
+    let glyph = if resp.hovered() { TEXT() } else { TEXT_SECONDARY() };
+    let g = rect.shrink(rect.width() * 0.27);
+    let stroke = Stroke::new(if rect.width() < 24.0 { 1.2 } else { 1.5 }, glyph);
+    ui.painter().rect_stroke(Rect::from_min_max(g.min + g.size() * 0.35, g.max), 2.0, stroke, egui::StrokeKind::Inside);
+    ui.painter().rect_stroke(Rect::from_min_max(g.min, g.max - g.size() * 0.35), 2.0, stroke, egui::StrokeKind::Inside);
     let tag = format!("[{} {}]", d.weapon_name, d.suffix).replace(" ]", "]");
-    if copy_resp.on_hover_text(format!("Copy chat tag {tag}")).clicked() {
+    if resp.on_hover_text(format!("Copy chat tag {tag}")).clicked() {
         ui.ctx().copy_text(tag);
     }
+}
 
+/// Compact card height for `stats` stat lines: header, stats, footer.
+fn compact_height(stats: usize) -> f32 {
+    COMPACT_PAD * 2.0 + 40.0 + 6.0 + stats as f32 * COMPACT_LINE + 6.0 + 16.0
+}
+
+const COMPACT_PAD: f32 = 8.0;
+const COMPACT_LINE: f32 = 15.0;
+
+/// A small riven card (original: the "compact" riven card size): weapon, grades,
+/// one line per stat and MR / polarity / rerolls.
+fn compact_card(ui: &mut Ui, riven: &OwnedRiven, d: &DecodedRiven, image: Option<&str>) -> bool {
+    let resp = kit::grid_card(ui, None, |ui| {
+        egui::Frame::new().inner_margin(Margin::same(COMPACT_PAD as i8)).show(ui, |ui| {
+            ui.spacing_mut().item_spacing = vec2(6.0, 0.0);
+            // Image, names (truncated), grades: fixed side columns, so the
+            // names get the width that's left.
+            const GRADE_W: f32 = 34.0;
+            ui.horizontal_top(|ui| {
+                kit::remote_image(ui, image, vec2(40.0, 40.0));
+                let names_w = (ui.available_width() - GRADE_W - ui.spacing().item_spacing.x).max(20.0);
+                ui.allocate_ui_with_layout(vec2(names_w, 40.0), Layout::top_down(Align::Min), |ui| {
+                    ui.set_width(names_w);
+                    ui.add(egui::Label::new(RichText::new(&d.weapon_name).font(FontId::new(14.0, theme::display_bold())).color(TEXT())).truncate());
+                    if !d.suffix.is_empty() {
+                        ui.add(egui::Label::new(RichText::new(&d.suffix).font(FontId::new(12.0, theme::display())).color(TEXT_SECONDARY())).truncate());
+                    }
+                });
+                ui.allocate_ui_with_layout(vec2(GRADE_W, 40.0), Layout::top_down(Align::Max), |ui| {
+                    ui.set_width(GRADE_W);
+                    ui.label(RichText::new(d.grade).font(FontId::new(14.0, theme::display_bold())).color(grade_color(d.grade)));
+                    let font = FontId::new(10.0, theme::display_bold());
+                    match d.attr_grade {
+                        Some(g) => ui.label(RichText::new(g.label().to_uppercase()).font(font).color(attr_color(g))),
+                        None => ui.label(RichText::new("?").font(font).color(TEXT_MUTED())).on_hover_text("No good-roll data for this weapon"),
+                    };
+                });
+            });
+            ui.add_space(6.0);
+            for stat in &d.stats {
+                let color = if stat.positive { POSITIVE() } else { NEGATIVE() };
+                ui.allocate_ui_with_layout(vec2(ui.available_width(), COMPACT_LINE), Layout::left_to_right(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 3.0;
+                    ui.label(RichText::new(stat.value_text()).font(FontId::new(12.0, theme::display_bold())).color(color));
+                    if let Some(img) = assets::element_icon(&stat.tag) {
+                        kit::icon(ui, img, 12.0);
+                    }
+                    ui.add(egui::Label::new(RichText::new(&stat.name).font(FontId::new(12.0, theme::display())).color(TEXT())).truncate());
+                });
+            }
+        });
+    });
+    // Footer: MR · polarity · rerolls, copy button bottom right.
+    let rect = resp.rect.shrink(COMPACT_PAD);
+    let y = rect.bottom() - 8.0;
+    let font = FontId::new(10.5, theme::body_strong());
+    let p = ui.painter();
+    let mr = p.text(pos2(rect.left(), y), Align2::LEFT_CENTER, format!("MR {}", riven.mastery_req), font.clone(), TEXT_SECONDARY());
+    let mut x = mr.right() + 8.0;
+    if let Some(icon) = riven.polarity.as_deref().and_then(assets::polarity_icon) {
+        egui::Image::new(icon).tint(TEXT()).paint_at(ui, Rect::from_min_size(pos2(x, y - 6.0), vec2(12.0, 12.0)));
+        x += 12.0 + 8.0;
+    }
+    p.text(pos2(x, y), Align2::LEFT_CENTER, format!("⟳ {}", riven.rerolls), font, REROLL);
+    let copy = Rect::from_min_size(pos2(rect.right() - 20.0, rect.bottom() - 18.0), vec2(20.0, 20.0));
+    copy_tag_button(ui, copy, resp.id.with("copy"), d);
     resp.on_hover_text("Open riven details").clicked()
 }
 

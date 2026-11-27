@@ -63,6 +63,8 @@ pub struct Settings {
     pub corner_style: String,
     /// Inventory shows rows instead of cards.
     pub inventory_rows: bool,
+    /// Unveiled rivens as small cards instead of the riven card art.
+    pub riven_compact: bool,
     /// Dailies/weeklies checklist: task id → reset timestamp it was ticked in.
     pub checklist: std::collections::BTreeMap<String, i64>,
     pub ui_scale: f32,
@@ -102,6 +104,7 @@ impl Default for Settings {
             theme_preset: "default".into(),
             corner_style: "soft".into(),
             inventory_rows: false,
+            riven_compact: false,
             checklist: Default::default(),
             ui_scale: 1.0,
             landing_view: "inventory".into(),
