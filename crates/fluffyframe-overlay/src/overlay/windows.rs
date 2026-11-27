@@ -137,11 +137,11 @@ impl Backend for WinOverlay {
     fn pump(&mut self) -> Result<Vec<Pointer>> {
         let mut input = Vec::new();
         unsafe {
-            // Panel pixels from the screen cursor and where the window was put.
-            let at = |position: (i32, i32)| {
+            // Screen coordinates are the fixed frame; panel ones only at the press.
+            let cursor = || {
                 let mut p = POINT::default();
                 let _ = GetCursorPos(&mut p);
-                (f64::from(p.x - position.0), f64::from(p.y - position.1))
+                (f64::from(p.x), f64::from(p.y))
             };
             let mut msg = MSG::default();
             while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
@@ -150,13 +150,11 @@ impl Backend for WinOverlay {
                         WM_LBUTTONDOWN => {
                             SetCapture(self.hwnd);
                             self.dragging = true;
-                            let (x, y) = at(self.position);
-                            input.push(Pointer::Press(x, y));
+                            let at = cursor();
+                            let local = (at.0 - f64::from(self.position.0), at.1 - f64::from(self.position.1));
+                            input.push(Pointer::Press { local, at });
                         }
-                        WM_MOUSEMOVE if self.dragging => {
-                            let (x, y) = at(self.position);
-                            input.push(Pointer::Motion(x, y));
-                        }
+                        WM_MOUSEMOVE if self.dragging => input.push(Pointer::Motion { at: cursor() }),
                         WM_LBUTTONUP if self.dragging => {
                             let _ = ReleaseCapture();
                             self.dragging = false;

@@ -306,19 +306,20 @@ impl PointerHandler for State {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlPointer, events: &[PointerEvent]) {
         let Some(shown) = self.shown.as_ref().filter(|s| s.full) else { return };
         let surface = shown.surface.wl_surface().clone();
-        // Surface positions to panel ones: the surface stays put, so this is
-        // exact even mid-drag.
+        // The surface stays put: its positions are the fixed frame; the panel
+        // one is only needed at the press.
         let (ox, oy) = shown.panel_origin();
         for event in events.iter().filter(|e| e.surface == surface) {
-            let (x, y) = (event.position.0 - f64::from(ox), event.position.1 - f64::from(oy));
+            let at = event.position;
+            let local = (at.0 - f64::from(ox), at.1 - f64::from(oy));
             match event.kind {
                 PointerEventKind::Enter { serial } => {
                     if let Some((_, Some(device))) = &self.pointer {
                         device.set_shape(serial, Shape::Move);
                     }
                 }
-                PointerEventKind::Press { button: BTN_LEFT, .. } => self.input.push(Pointer::Press(x, y)),
-                PointerEventKind::Motion { .. } => self.input.push(Pointer::Motion(x, y)),
+                PointerEventKind::Press { button: BTN_LEFT, .. } => self.input.push(Pointer::Press { local, at }),
+                PointerEventKind::Motion { .. } => self.input.push(Pointer::Motion { at }),
                 PointerEventKind::Release { button: BTN_LEFT, .. } => self.input.push(Pointer::Release),
                 _ => {}
             }

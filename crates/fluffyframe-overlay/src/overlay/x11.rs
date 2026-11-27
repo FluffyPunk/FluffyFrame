@@ -129,19 +129,17 @@ impl Backend for X11Overlay {
     fn pump(&mut self) -> Result<Vec<Pointer>> {
         let mut expose = false;
         let mut input = Vec::new();
-        // Panel pixels from root coordinates and where the window was put.
-        let at = |x: i16, y: i16| (f64::from(i32::from(x) - self.position.0), f64::from(i32::from(y) - self.position.1));
+        // Root coordinates are the fixed frame; panel ones only at the press.
+        let (px, py) = (f64::from(self.position.0), f64::from(self.position.1));
+        let at = |x: i16, y: i16| (f64::from(x), f64::from(y));
         while let Some(event) = self.conn.poll_for_event()? {
             match event {
                 Event::Expose(_) => expose = true,
                 Event::ButtonPress(e) if e.detail == 1 => {
-                    let (x, y) = at(e.root_x, e.root_y);
-                    input.push(Pointer::Press(x, y));
+                    let at = at(e.root_x, e.root_y);
+                    input.push(Pointer::Press { local: (at.0 - px, at.1 - py), at });
                 }
-                Event::MotionNotify(e) => {
-                    let (x, y) = at(e.root_x, e.root_y);
-                    input.push(Pointer::Motion(x, y));
-                }
+                Event::MotionNotify(e) => input.push(Pointer::Motion { at: at(e.root_x, e.root_y) }),
                 Event::ButtonRelease(e) if e.detail == 1 => input.push(Pointer::Release),
                 _ => {}
             }

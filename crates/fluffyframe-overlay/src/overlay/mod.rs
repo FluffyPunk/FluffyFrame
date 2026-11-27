@@ -119,11 +119,15 @@ impl Overlay {
     }
 }
 
-/// Pointer input on the panel in edit mode, in panel pixels.
+/// Pointer input on the panel in edit mode. `at` is in a frame that doesn't
+/// move with the panel (the screen, or a surface covering the output): a drag
+/// is the pointer's travel since the press in that frame, so events arriving
+/// several at a time can't add up to more than the pointer moved.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Pointer {
-    Press(f64, f64),
-    Motion(f64, f64),
+    /// `local`: where on the panel (for the resize grip).
+    Press { local: (f64, f64), at: (f64, f64) },
+    Motion { at: (f64, f64) },
     Release,
 }
 
@@ -168,7 +172,8 @@ fn backend() -> anyhow::Result<Box<dyn Backend>> {
 /// A drag in progress, from where the pointer went down.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Drag {
-    Move { x: f64, y: f64 },
+    /// From the press: where the pointer was and the panel's place.
+    Move { at: (f64, f64), right: i32, top: i32 },
     Resize { x: f64, width: f64, scale: f32, right: i32 },
 }
 
@@ -215,24 +220,24 @@ impl Shown<'_> {
     /// Applies pointer input; true when a drag ended (the layout is final).
     fn pointer(&mut self, input: Pointer, backend: &mut dyn Backend) -> bool {
         match (input, self.drag) {
-            (Pointer::Press(x, y), _) => {
+            (Pointer::Press { local: (x, y), at }, _) => {
                 let width = f64::from(self.size.0);
                 let grip = f64::from(render::grip(self.layout.scale));
                 self.drag = Some(if x >= width - grip && y >= f64::from(self.size.1) - grip {
-                    Drag::Resize { x, width, scale: self.layout.scale, right: self.layout.right }
+                    Drag::Resize { x: at.0, width, scale: self.layout.scale, right: self.layout.right }
                 } else {
-                    Drag::Move { x, y }
+                    Drag::Move { at, right: self.layout.right, top: self.layout.top }
                 });
             }
-            (Pointer::Motion(x, y), Some(Drag::Move { x: x0, y: y0 })) => {
-                let (dx, dy) = ((x - x0).round() as i32, (y - y0).round() as i32);
-                if (dx, dy) != (0, 0) {
-                    self.layout.right -= dx;
-                    self.layout.top += dy;
+            (Pointer::Motion { at: (x, y) }, Some(Drag::Move { at: (x0, y0), right, top })) => {
+                // Where the panel was at the press, plus the pointer's travel.
+                let place = (right - (x - x0).round() as i32, top + (y - y0).round() as i32);
+                if place != (self.layout.right, self.layout.top) {
+                    (self.layout.right, self.layout.top) = place;
                     self.redraw(backend);
                 }
             }
-            (Pointer::Motion(x, _), Some(Drag::Resize { x: x0, width, scale, right })) => {
+            (Pointer::Motion { at: (x, _) }, Some(Drag::Resize { x: x0, width, scale, right })) => {
                 // The grip follows the pointer: the width grows by as much as
                 // it moved, the top-left corner stays put.
                 let wanted = (width + x - x0).max(1.0);
@@ -306,6 +311,10 @@ fn run(fonts: &Fonts, rx: &Receiver<Cmd>, layout: Layout, on_layout: &dyn Fn(Lay
         }
         match backend.pump() {
             Ok(inputs) => {
+                // Only the latest position of a run of motion is drawn.
+                let last_motion = |i: usize| matches!(inputs.get(i + 1), Some(Pointer::Motion { .. }));
+                let inputs: Vec<Pointer> =
+                    inputs.iter().enumerate().filter(|(i, p)| !(matches!(p, Pointer::Motion { .. }) && last_motion(*i))).map(|(_, p)| *p).collect();
                 for input in inputs {
                     if shown.editing() && shown.pointer(input, backend.as_mut()) {
                         on_layout(shown.layout);
@@ -366,11 +375,15 @@ mod tests {
         let fonts = Fonts::new(&[]);
         let (mut screen, mut shown) = (Screen::default(), editing(&fonts));
         shown.redraw(&mut screen);
-        assert!(!shown.pointer(Pointer::Press(20.0, 10.0), &mut screen));
+        assert!(!shown.pointer(Pointer::Press { local: (20.0, 10.0), at: (500.0, 300.0) }, &mut screen));
         // 30 px right and 5 down: 30 px closer to the right edge.
-        shown.pointer(Pointer::Motion(50.0, 15.0), &mut screen);
+        shown.pointer(Pointer::Motion { at: (530.0, 305.0) }, &mut screen);
         assert_eq!((shown.layout.right, shown.layout.top), (2, 37));
         assert_eq!(screen.shown.map(|s| (s.1, s.2)), Some((2, 37)));
+        // Events that arrive together don't add up: each is the travel since the press.
+        shown.pointer(Pointer::Motion { at: (540.0, 305.0) }, &mut screen);
+        shown.pointer(Pointer::Motion { at: (550.0, 305.0) }, &mut screen);
+        assert_eq!((shown.layout.right, shown.layout.top), (-18, 37));
         assert!(shown.pointer(Pointer::Release, &mut screen));
     }
 
@@ -381,14 +394,14 @@ mod tests {
         shown.redraw(&mut screen);
         let (w, h) = (f64::from(shown.size.0), f64::from(shown.size.1));
         let left = -(w as i32) - shown.layout.right;
-        shown.pointer(Pointer::Press(w - 2.0, h - 2.0), &mut screen);
+        shown.pointer(Pointer::Press { local: (w - 2.0, h - 2.0), at: (w - 2.0, h - 2.0) }, &mut screen);
         assert!(matches!(shown.drag, Some(Drag::Resize { .. })));
-        shown.pointer(Pointer::Motion(w * 1.5 - 2.0, h), &mut screen);
+        shown.pointer(Pointer::Motion { at: (w * 1.5 - 2.0, h) }, &mut screen);
         assert!((shown.layout.scale - 1.5).abs() < 0.05, "{}", shown.layout.scale);
         // The left edge (monitor width − panel width − right) didn't move.
         assert_eq!(-(shown.size.0 as i32) - shown.layout.right, left);
         // Never past the limits.
-        shown.pointer(Pointer::Motion(w * 10.0, h), &mut screen);
+        shown.pointer(Pointer::Motion { at: (w * 10.0, h) }, &mut screen);
         assert_eq!(shown.layout.scale, MAX_SCALE);
     }
 
