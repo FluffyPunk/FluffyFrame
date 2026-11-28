@@ -45,8 +45,12 @@ pub mod bounty_cycle;
 pub mod world_state;
 
 // EE.log and trackers
+#[cfg(windows)]
+pub mod debug_output;
 pub mod ee_log_monitor;
 pub mod ee_log_path;
+#[cfg(not(windows))]
+pub mod proton_log;
 pub mod stats_tracker;
 pub mod trade_tracker;
 
